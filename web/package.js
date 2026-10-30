@@ -46,15 +46,25 @@ export async function openPackage(url) {
     entries.set(entry.path, entry);
   }
 
+  let span = null;
+
+  async function preload(list) {
+    const start = Math.min(...list.map((entry) => entry.offset));
+    const end = Math.max(...list.map((entry) => entry.offset + entry.stored));
+    span = { start, end, bytes: await readRange(url, start, end, whole) };
+  }
+
   async function read(path) {
     const entry = entries.get(path);
     if (!entry) throw new Error(`Package has no entry ${path}`);
-    const stored = await readRange(url, entry.offset, entry.offset + entry.stored, whole);
+    const stored = span && entry.offset >= span.start && entry.offset + entry.stored <= span.end
+      ? span.bytes.subarray(entry.offset - span.start, entry.offset - span.start + entry.stored)
+      : await readRange(url, entry.offset, entry.offset + entry.stored, whole);
     const data = entry.method === "deflate" ? await inflate(stored) : stored;
     if (data.length !== entry.size) throw new Error(`Package entry ${path} has the wrong length`);
     if (hex(await crypto.subtle.digest("SHA-256", data)) !== entry.sha256) throw new Error(`Package entry ${path} failed its integrity check`);
     return data;
   }
 
-  return { build: manifest.build, entries, read };
+  return { build: manifest.build, entries, preload, read };
 }

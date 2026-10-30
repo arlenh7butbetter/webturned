@@ -45,7 +45,7 @@ function Build-Player {
     }
 }
 
-function Build-Game([string]$method, [string]$logName) {
+function Build-Game([string]$method, [string]$logName, [switch]$StayOpen) {
     $project = Join-Path $buildDir "full"
     $log = Join-Path $buildDir "logs\$logName.log"
     New-Item -ItemType Directory -Force (Split-Path $log) | Out-Null
@@ -56,11 +56,27 @@ function Build-Game([string]$method, [string]$logName) {
         @("assets\U3-SDK\ProjectSettings", "ProjectSettings"),
         @("assets\U3-SDK\Packages", "Packages")
     )) {
-        robocopy (Join-Path $root $copy[0]) (Join-Path $project $copy[1]) /E /XO /NFL /NDL /NJH /NJS /NP | Out-Null
+        robocopy (Join-Path $root $copy[0]) (Join-Path $project $copy[1]) /E /XO /XD Json.NET /NFL /NDL /NJH /NJS /NP | Out-Null
         if ($LASTEXITCODE -ge 8) { throw "Copying $($copy[0]) failed with exit code $LASTEXITCODE" }
+    }
+    Remove-Item (Join-Path $project "Assets\Plugins\Json.NET*") -Recurse -Force -ErrorAction SilentlyContinue
+
+    $manifest = Join-Path $project "Packages\manifest.json"
+    $manifestText = [IO.File]::ReadAllText($manifest)
+    if (-not $manifestText.Contains("com.unity.nuget.newtonsoft-json")) {
+        [IO.File]::WriteAllText($manifest, $manifestText.Replace('"dependencies": {', '"dependencies": { "com.unity.nuget.newtonsoft-json": "3.2.2",'))
     }
     robocopy (Join-Path $root "engine\overlay\Assets") (Join-Path $project "Assets") /E /NFL /NDL /NJH /NJS /NP | Out-Null
     if ($LASTEXITCODE -ge 8) { throw "Copying the overlay failed with exit code $LASTEXITCODE" }
+
+    robocopy (Join-Path $root "engine\unity\Assets\Plugins\WebGL") (Join-Path $project "Assets\Plugins\WebGL") /E /NFL /NDL /NJH /NJS /NP | Out-Null
+    if ($LASTEXITCODE -ge 8) { throw "Copying the browser plugins failed with exit code $LASTEXITCODE" }
+    Invoke-Checked "Steam layer" {
+        node (Join-Path $root "tools\gen-steam.mjs") `
+            (Join-Path $root "src\Assets\com.rlabrecque.steamworks.net\Runtime\autogen\NativeMethods.cs") `
+            (Join-Path $root "engine\overlay\Assets\Plugins\WebGL\SteamCore.jslib") `
+            (Join-Path $project "Assets\Plugins\WebGL\SteamMissing.jslib")
+    }
 
     $patches = Get-Content (Join-Path $root "engine\patches.json") -Raw | ConvertFrom-Json
     foreach ($patch in $patches) {
@@ -76,14 +92,16 @@ function Build-Game([string]$method, [string]$logName) {
     $env:UNTURNED_PLAYER_SCRIPTS = Join-Path $buildDir "player-scripts"
     $env:UNTURNED_WEB_OUTPUT = Join-Path $buildDir "game-player"
     Write-Host "== $method (log: $log)"
-    $process = Start-Process -FilePath $unity -Wait -PassThru -ArgumentList @(
-        "-batchmode", "-nographics", "-quit",
+    $arguments = @(
+        "-batchmode", "-nographics",
         "-projectPath", "`"$project`"",
         "-buildTarget", "WebGL",
         "-accept-apiupdate",
         "-executeMethod", $method,
         "-logFile", "`"$log`""
     )
+    if (-not $StayOpen) { $arguments += "-quit" }
+    $process = Start-Process -FilePath $unity -Wait -PassThru -ArgumentList $arguments
     $errors = Select-String -Path $log -Pattern "error CS\d+" | ForEach-Object { $_.Line } | Sort-Object -Unique
     Write-Host "Unity exit code $($process.ExitCode), $($errors.Count) unique compile errors"
     $errors | Select-Object -First 40 | ForEach-Object { Write-Host $_ }
@@ -107,35 +125,49 @@ function Convert-Assets {
     if ($process.ExitCode -ne 0) { throw "Asset conversion failed with exit code $($process.ExitCode), see $log" }
 }
 
-function Build-Package {
-    $player = Join-Path $buildDir "player\Build"
-    $staging = Join-Path $buildDir "package\player"
+function Build-Package([string]$playerName, [string]$output, [switch]$FullData) {
+    $player = Join-Path $buildDir "$playerName\Build"
+    $staging = Join-Path $buildDir "package\$playerName"
     Remove-Item $staging -Recurse -Force -ErrorAction SilentlyContinue
     New-Item -ItemType Directory -Force $staging | Out-Null
-    Copy-Item (Join-Path $player "player.data") (Join-Path $staging "game.data")
-    Copy-Item (Join-Path $player "player.framework.js") (Join-Path $staging "game.framework.js")
-    Copy-Item (Join-Path $player "player.wasm") (Join-Path $staging "game.wasm")
+    Copy-Item (Join-Path $player "$playerName.data") (Join-Path $staging "game.data")
+    Copy-Item (Join-Path $player "$playerName.framework.js") (Join-Path $staging "game.framework.js")
+    Copy-Item (Join-Path $player "$playerName.wasm") (Join-Path $staging "game.wasm")
 
     $groups = @("player=$staging@player", "game=$(Join-Path $buildDir "converted\Textures")@game/Textures")
     foreach ($map in $Maps) {
         $groups += "map/$map=$(Join-Path $buildDir "converted\Maps\$map")@game/Maps/$map/Converted"
-        foreach ($part in "Landscape", "Spawns") {
-            $groups += "map/$map=$(Join-Path $root "assets\Maps\$map\$part")@game/Maps/$map/$part"
+        if ($FullData) {
+            $groups += "map/$map=$(Join-Path $root "assets\Maps\$map")@game/Maps/$map"
+        } else {
+            foreach ($part in "Landscape", "Spawns") {
+                $groups += "map/$map=$(Join-Path $root "assets\Maps\$map\$part")@game/Maps/$map/$part"
+            }
         }
     }
+    if ($FullData) {
+        foreach ($part in "Bundles", "Localization", "Content", "CuratedMapIcons", "LoadingScreens") {
+            $groups += "game=$(Join-Path $root "assets\$part")@game/$part"
+        }
+        $rootFiles = Join-Path $buildDir "package\root"
+        Remove-Item $rootFiles -Recurse -Force -ErrorAction SilentlyContinue
+        New-Item -ItemType Directory -Force $rootFiles | Out-Null
+        Get-ChildItem (Join-Path $root "assets") -File | Copy-Item -Destination $rootFiles
+        $groups += "game=$rootFiles@game"
+    }
 
-    Remove-Item $dist -Recurse -Force -ErrorAction SilentlyContinue
-    New-Item -ItemType Directory -Force $dist | Out-Null
+    Remove-Item $output -Recurse -Force -ErrorAction SilentlyContinue
+    New-Item -ItemType Directory -Force $output | Out-Null
     Invoke-Checked "Packer" { dotnet build (Join-Path $root "tools\Packer") -c Release --nologo -v q --nodeReuse:false -p:UseSharedCompilation=false }
-    Invoke-Checked "Package" { dotnet (Join-Path $buildDir "tools\Packer\bin\Packer.dll") (Join-Path $dist "game.unturned") @groups }
+    Invoke-Checked "Package" { dotnet (Join-Path $buildDir "tools\Packer\bin\Packer.dll") (Join-Path $output "game.unturned") @groups }
 
     $runtime = @(
-        Get-Content (Join-Path $player "player.loader.js") -Raw
+        Get-Content (Join-Path $player "$playerName.loader.js") -Raw
         (Get-Content (Join-Path $root "web\package.js") -Raw) -replace "(?m)^export ", ""
         Get-Content (Join-Path $root "web\boot.js") -Raw
     ) -join "`n"
-    [IO.File]::WriteAllText((Join-Path $dist "runtime.js"), $runtime)
-    Copy-Item (Join-Path $root "web\index.html") (Join-Path $dist "index.html")
+    [IO.File]::WriteAllText((Join-Path $output "runtime.js"), $runtime)
+    Copy-Item (Join-Path $root "web\index.html") (Join-Path $output "index.html")
 }
 
 switch ($Command) {
@@ -146,14 +178,20 @@ switch ($Command) {
         Build-Game "FullBuild.CompilePlayer" "compile"
     }
     "game" {
-        Build-Game "FullBuild.BuildPlayer" "game"
+        if (-not $PackageOnly) {
+            if (-not (Test-Path (Join-Path $buildDir "full\Assets\TextMesh Pro\Resources\TMP Settings.asset"))) {
+                Build-Game "FullBuild.WaitForImport" "import" -StayOpen
+            }
+            Build-Game "FullBuild.BuildPlayer" "game"
+        }
+        Build-Package "game-player" (Join-Path $buildDir "game-dist") -FullData
     }
     "build" {
         if (-not $PackageOnly) {
             Build-Player
             Convert-Assets
         }
-        Build-Package
+        Build-Package "player" $dist
     }
     "test" {
         Invoke-Checked "Package tests" { node --test (Join-Path $root "tests\package.test.mjs") }

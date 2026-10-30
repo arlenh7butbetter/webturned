@@ -1,3 +1,7 @@
+window.unturnedFiles = {
+  read: function (path) { return FS.readFile(path, { encoding: "utf8" }); },
+  list: function (path) { return FS.readdir(path); },
+};
 Module.preRun = Module.preRun || [];
 Module.preRun.push(function () {
   for (const file of Module.unturnedFiles) {

@@ -1,0 +1,66 @@
+import { spawn } from "node:child_process";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { serve } from "./serve.mjs";
+
+const [root, seconds, logPath, shotPath] = process.argv.slice(2);
+const chrome = ["C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe", "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe"].find(existsSync);
+const server = await serve(root, 0);
+const profile = mkdtempSync(join(tmpdir(), "unturned-chrome-"));
+const browser = spawn(chrome, ["--headless=new", "--remote-debugging-port=0", "--use-angle=swiftshader", "--enable-unsafe-swiftshader", "--ignore-gpu-blocklist", "--window-size=1280,720", `--user-data-dir=${profile}`, "about:blank"], { stdio: "ignore" });
+
+let page;
+for (let i = 0; i < 100 && !page; i++) {
+  await new Promise((resolve) => setTimeout(resolve, 200));
+  const portFile = join(profile, "DevToolsActivePort");
+  const port = existsSync(portFile) ? readFileSync(portFile, "utf8").split("\n")[0].trim() : "";
+  if (port) page = (await (await fetch(`http://127.0.0.1:${port}/json`)).json()).find((target) => target.type === "page");
+}
+
+const socket = new WebSocket(page.webSocketDebuggerUrl);
+await new Promise((resolve) => { socket.onopen = resolve; });
+const logs = [];
+const pending = new Map();
+let nextId = 1;
+socket.onmessage = ({ data }) => {
+  const message = JSON.parse(data);
+  if (message.id) {
+    pending.get(message.id)?.(message);
+  } else if (message.method === "Runtime.consoleAPICalled") {
+    logs.push(`[${message.params.type}] ${message.params.args.map((arg) => arg.value ?? arg.description ?? "").join(" ")}`);
+  } else if (message.method === "Runtime.exceptionThrown") {
+    logs.push(`[exception] ${message.params.exceptionDetails.exception?.description ?? message.params.exceptionDetails.text}`);
+  }
+};
+function send(method, params = {}) {
+  const id = nextId++;
+  socket.send(JSON.stringify({ id, method, params }));
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => resolve(null), 60000);
+    pending.set(id, (message) => { clearTimeout(timer); resolve(message.result); });
+  });
+}
+
+await send("Runtime.enable");
+await send("Page.enable");
+await send("Page.navigate", { url: `http://127.0.0.1:${server.address().port}/index.html` });
+await new Promise((resolve) => setTimeout(resolve, Number(seconds) * 1000));
+
+const state = await send("Runtime.evaluate", { expression: `document.getElementById("status").hidden + " | " + document.getElementById("status").textContent`, returnByValue: true });
+logs.push(`[probe] status hidden | text: ${state?.result?.value ?? "page did not respond"}`);
+const gameLog = await send("Runtime.evaluate", {
+  expression: `(() => { const files = window.unturnedFiles; if (!files) return "game log reader unavailable"; const out = ["/game: " + files.list("/game").join(" ")]; let names = []; try { names = files.list("/game/Logs"); } catch (e) { out.push("/game/Logs: " + e); } for (const name of names) { if (name === "." || name === "..") continue; out.push("=== " + name); out.push(files.read("/game/Logs/" + name)); } return out.join("\\n"); })()`,
+  returnByValue: true,
+});
+logs.push(`[probe] game log:\n${gameLog?.result?.value ?? "page did not respond"}`);
+const shot = await send("Page.captureScreenshot", { format: "png" });
+if (shot) writeFileSync(shotPath, Buffer.from(shot.data, "base64"));
+writeFileSync(logPath, logs.join("\n"));
+
+socket.close();
+browser.kill();
+server.close();
+server.closeAllConnections();
+await new Promise((resolve) => setTimeout(resolve, 500));
+rmSync(profile, { recursive: true, force: true, maxRetries: 5, retryDelay: 500 });

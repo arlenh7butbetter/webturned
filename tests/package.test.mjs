@@ -79,6 +79,14 @@ test("rejects a corrupted stored entry", async () => {
   await assert.rejects(mutated.read("data/image.png"), /integrity check/);
 });
 
+test("preloaded entries read the same bytes", async () => {
+  const pkg = await openPackage(url);
+  await pkg.preload([...pkg.entries.values()]);
+  for (const [path, data] of Object.entries(files)) {
+    assert.deepEqual(Buffer.from(await pkg.read(`data/${path}`)), data);
+  }
+});
+
 test("reports a missing entry", async () => {
   const pkg = await openPackage(url);
   await assert.rejects(pkg.read("data/nope"), /no entry/);

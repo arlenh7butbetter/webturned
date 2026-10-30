@@ -1,6 +1,7 @@
 using System;
 using System.Linq;
 using UnityEditor;
+using UnityEditor.Build;
 using UnityEditor.Build.Player;
 using UnityEditor.Build.Reporting;
 using UnityEngine;
@@ -23,15 +24,36 @@ public static class FullBuild
             EditorApplication.Exit(1);
     }
 
+    public static void WaitForImport()
+    {
+        AssetDatabase.importPackageCompleted += _ => EditorApplication.Exit(0);
+        AssetDatabase.importPackageFailed += (name, error) =>
+        {
+            Debug.LogError($"Importing {name} failed: {error}");
+            EditorApplication.Exit(1);
+        };
+        var deadline = EditorApplication.timeSinceStartup + 180;
+        EditorApplication.update += () =>
+        {
+            if (EditorApplication.timeSinceStartup > deadline)
+                EditorApplication.Exit(1);
+        };
+    }
+
     public static void BuildPlayer()
     {
+        if (AssetDatabase.LoadAssetAtPath<UnityEngine.Object>("Assets/TextMesh Pro/Resources/TMP Settings.asset") == null)
+            throw new InvalidOperationException("TMP Essential Resources are not imported");
+
         PlayerSettings.SetUseDefaultGraphicsAPIs(BuildTarget.WebGL, false);
         PlayerSettings.SetGraphicsAPIs(BuildTarget.WebGL, new[] { GraphicsDeviceType.OpenGLES3 });
         PlayerSettings.WebGL.compressionFormat = WebGLCompressionFormat.Disabled;
         PlayerSettings.WebGL.decompressionFallback = false;
         PlayerSettings.WebGL.nameFilesAsHashes = false;
         PlayerSettings.WebGL.dataCaching = false;
-        PlayerSettings.WebGL.exceptionSupport = WebGLExceptionSupport.ExplicitlyThrownExceptionsOnly;
+        PlayerSettings.WebGL.exceptionSupport = WebGLExceptionSupport.FullWithStacktrace;
+        PlayerSettings.stripEngineCode = false;
+        PlayerSettings.SetManagedStrippingLevel(NamedBuildTarget.WebGL, ManagedStrippingLevel.Minimal);
         PlayerSettings.WebGL.template = "APPLICATION:Minimal";
 
         var scenes = EditorBuildSettings.scenes.Where(scene => scene.enabled).Select(scene => scene.path).ToArray();
