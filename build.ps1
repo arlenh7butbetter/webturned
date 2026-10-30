@@ -1,5 +1,5 @@
 param(
-    [ValidateSet("build", "clean", "test", "run", "compile")]
+    [ValidateSet("build", "clean", "test", "run", "compile", "game")]
     [string]$Command = "build",
     [string[]]$Maps = @("PEI"),
     [int]$Port = 8080,
@@ -45,9 +45,9 @@ function Build-Player {
     }
 }
 
-function Compile-Game {
+function Build-Game([string]$method, [string]$logName) {
     $project = Join-Path $buildDir "full"
-    $log = Join-Path $buildDir "logs\compile.log"
+    $log = Join-Path $buildDir "logs\$logName.log"
     New-Item -ItemType Directory -Force (Split-Path $log) | Out-Null
 
     foreach ($copy in @(
@@ -56,21 +56,38 @@ function Compile-Game {
         @("assets\U3-SDK\ProjectSettings", "ProjectSettings"),
         @("assets\U3-SDK\Packages", "Packages")
     )) {
-        robocopy (Join-Path $root $copy[0]) (Join-Path $project $copy[1]) /E /NFL /NDL /NJH /NJS /NP | Out-Null
+        robocopy (Join-Path $root $copy[0]) (Join-Path $project $copy[1]) /E /XO /NFL /NDL /NJH /NJS /NP | Out-Null
         if ($LASTEXITCODE -ge 8) { throw "Copying $($copy[0]) failed with exit code $LASTEXITCODE" }
     }
+    robocopy (Join-Path $root "engine\overlay\Assets") (Join-Path $project "Assets") /E /NFL /NDL /NJH /NJS /NP | Out-Null
+    if ($LASTEXITCODE -ge 8) { throw "Copying the overlay failed with exit code $LASTEXITCODE" }
 
-    Write-Host "== Compile original source for WebGL (log: $log)"
+    $patches = Get-Content (Join-Path $root "engine\patches.json") -Raw | ConvertFrom-Json
+    foreach ($patch in $patches) {
+        $file = Join-Path $project "Assets\$($patch.file)"
+        $text = [IO.File]::ReadAllText($file)
+        if ($text.Contains($patch.find)) {
+            [IO.File]::WriteAllText($file, $text.Replace($patch.find, $patch.replace))
+        } elseif (-not $text.Contains($patch.replace)) {
+            throw "Patch for $($patch.file) no longer matches: $($patch.find)"
+        }
+    }
+
+    $env:UNTURNED_PLAYER_SCRIPTS = Join-Path $buildDir "player-scripts"
+    $env:UNTURNED_WEB_OUTPUT = Join-Path $buildDir "game-player"
+    Write-Host "== $method (log: $log)"
     $process = Start-Process -FilePath $unity -Wait -PassThru -ArgumentList @(
         "-batchmode", "-nographics", "-quit",
         "-projectPath", "`"$project`"",
         "-buildTarget", "WebGL",
+        "-accept-apiupdate",
+        "-executeMethod", $method,
         "-logFile", "`"$log`""
     )
     $errors = Select-String -Path $log -Pattern "error CS\d+" | ForEach-Object { $_.Line } | Sort-Object -Unique
     Write-Host "Unity exit code $($process.ExitCode), $($errors.Count) unique compile errors"
     $errors | Select-Object -First 40 | ForEach-Object { Write-Host $_ }
-    if ($process.ExitCode -ne 0) { throw "Compile failed, see $log" }
+    if ($process.ExitCode -ne 0) { throw "$method failed, see $log" }
 }
 
 function Build-Package {
@@ -108,7 +125,10 @@ switch ($Command) {
         Remove-Item $buildDir, $dist -Recurse -Force -ErrorAction SilentlyContinue
     }
     "compile" {
-        Compile-Game
+        Build-Game "FullBuild.CompilePlayer" "compile"
+    }
+    "game" {
+        Build-Game "FullBuild.BuildPlayer" "game"
     }
     "build" {
         if (-not $PackageOnly) { Build-Player }

@@ -1,0 +1,7 @@
+-r:System.IO.Compression.FileSystem.dll
+-nowarn:0612
+-define:STEAMWORKS_WIN
+-define:STEAMWORKS_NET
+-define:GAME
+-define:WITH_GRANTPACKAGE_PROMO
+-define:UNITY_POST_PROCESSING_STACK_V2

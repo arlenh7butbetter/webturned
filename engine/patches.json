@@ -1,0 +1,18 @@
+[
+  { "file": "Editor/Assembly-CSharp-Editor/Tools/BundleTool.cs", "find": "if (!BuildPipeline.BuildAssetBundle(selection[0], selection, path, BuildAssetBundleOptions.UncompressedAssetBundle, BuildTarget.StandaloneWindows))", "replace": "if (BuildPipeline.BuildAssetBundles(System.IO.Path.GetDirectoryName(path), new[] { new AssetBundleBuild { assetBundleName = System.IO.Path.GetFileName(path), assetNames = System.Linq.Enumerable.ToArray(System.Linq.Enumerable.Distinct(System.Linq.Enumerable.Where(System.Linq.Enumerable.Select(selection, selected => AssetDatabase.GetAssetPath(selected)), assetPath => !string.IsNullOrEmpty(assetPath)))) } }, BuildAssetBundleOptions.UncompressedAssetBundle, BuildTarget.StandaloneWindows) == null)" },
+  { "file": "Runtime/Assembly-CSharp/Unturned/Provider/Provider.cs", "find": "#if UNITY_EDITOR || UNITY_STANDALONE_WIN\n\t\t\t\t\t\tclientPlatform = EClientPlatform.Windows;", "replace": "#if UNITY_EDITOR || UNITY_STANDALONE_WIN || UNITY_WEBGL\n\t\t\t\t\t\tclientPlatform = EClientPlatform.Windows;" },
+  { "file": "Runtime/Assembly-CSharp/Unturned/Bundles/MasterBundleConfig.cs", "find": "#if UNITY_STANDALONE_WIN\n", "replace": "#if UNITY_STANDALONE_WIN || UNITY_WEBGL\n" },
+  { "file": "Runtime/Assembly-CSharp/Unturned/Bundles/ServerPrefabUtil.cs", "find": ".GetInstanceID()", "replace": ".GetEntityId()" },
+  { "file": "Runtime/Assembly-CSharp/Unturned/Managers/BarricadeManager.cs", "find": ".GetInstanceID()", "replace": ".GetEntityId()" },
+  { "file": "Runtime/Assembly-CSharp/Unturned/Managers/BarricadeManager.cs", "find": "int prefabKey = ", "replace": "EntityId prefabKey = " },
+  { "file": "Runtime/Assembly-CSharp/Unturned/Managers/BarricadeManager.cs", "find": "Dictionary<int, Stack<GameObject>>", "replace": "Dictionary<EntityId, Stack<GameObject>>" },
+  { "file": "Runtime/Assembly-CSharp/Unturned/Managers/StructureManager.cs", "find": ".GetInstanceID()", "replace": ".GetEntityId()" },
+  { "file": "Runtime/Assembly-CSharp/Unturned/Managers/StructureManager.cs", "find": "int prefabKey = ", "replace": "EntityId prefabKey = " },
+  { "file": "Runtime/Assembly-CSharp/Unturned/Managers/StructureManager.cs", "find": "Dictionary<int, Stack<GameObject>>", "replace": "Dictionary<EntityId, Stack<GameObject>>" },
+  { "file": "Runtime/Assembly-CSharp/Unturned/Tools/ItemTool.cs", "find": ".GetInstanceID()", "replace": ".GetEntityId()" },
+  { "file": "Runtime/Assembly-CSharp/Unturned/Tools/ItemTool.cs", "find": "int key = prefab.GetEntityId()", "replace": "EntityId key = prefab.GetEntityId()" },
+  { "file": "Runtime/Assembly-CSharp/Unturned/Tools/ItemTool.cs", "find": "Dictionary<int, int> cachedAttachmentEventHookCount = new Dictionary<int, int>()", "replace": "Dictionary<EntityId, int> cachedAttachmentEventHookCount = new Dictionary<EntityId, int>()" },
+  { "file": "Runtime/Assembly-CSharp/Unturned/Tools/PhysicsTool.cs", "find": ".GetInstanceID()", "replace": ".GetEntityId()" },
+  { "file": "Runtime/Assembly-CSharp/Unturned/Tools/PhysicsTool.cs", "find": "int id = material.GetEntityId()", "replace": "EntityId id = material.GetEntityId()" },
+  { "file": "Runtime/Assembly-CSharp/Unturned/Tools/PhysicsTool.cs", "find": "Dictionary<int, string> physicsMaterialToName = new Dictionary<int, string>()", "replace": "Dictionary<EntityId, string> physicsMaterialToName = new Dictionary<EntityId, string>()" }
+]
