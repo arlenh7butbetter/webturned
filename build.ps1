@@ -146,9 +146,14 @@ function Build-Package([string]$playerName, [string]$output, [switch]$FullData) 
         }
     }
     if ($FullData) {
-        foreach ($part in "Bundles", "Localization", "Content", "CuratedMapIcons", "LoadingScreens") {
+        foreach ($part in "Localization", "Content", "CuratedMapIcons", "LoadingScreens") {
             $groups += "game=$(Join-Path $root "assets\$part")@game/$part"
         }
+        $bundles = Join-Path $buildDir "package\Bundles"
+        robocopy (Join-Path $root "assets\Bundles") $bundles /MIR /XF core.masterbundle /NFL /NDL /NJH /NJS /NP | Out-Null
+        if ($LASTEXITCODE -ge 8) { throw "Copying bundles failed with exit code $LASTEXITCODE" }
+        Copy-Item (Join-Path $buildDir "converted\Bundles\core.masterbundle") $bundles
+        $groups += "game=$bundles@game/Bundles"
         $rootFiles = Join-Path $buildDir "package\root"
         Remove-Item $rootFiles -Recurse -Force -ErrorAction SilentlyContinue
         New-Item -ItemType Directory -Force $rootFiles | Out-Null

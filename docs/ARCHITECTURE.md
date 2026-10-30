@@ -22,17 +22,18 @@ Standalone .NET would mean writing a substitute for most of Unity before any gam
 ### Costs of this choice
 
 - **Engine version.** The source targets Unity 2022.3.62f3, which has no WebGL module installed here. The build uses the installed 6000.6.7f1, so the original code may need API updates, applied by overlay and never in `src/`.
-- **Asset bundles.** The shipped bundles are built for Windows and contain Direct3D shaders. They need converting for WebGL. The planned route is to load them in the editor and rebuild them for WebGL, with shaders replaced from the SDK sources.
-- **Single-threaded.** WebGL threading is off, but the original uses `ThreadPool` and `Thread` in 5 files, such as `AssetsWorker`, `FoliageStorageV2` and `ResourceHash`.
+- **Asset bundles.** The shipped bundles are LZMA-compressed, built for Windows and contain Direct3D shaders. The WebGL player rejects all three. The editor can read them and recompress them to LZ4, which is done. Target and shader conversion are still open.
+- **Single-threaded.** WebGL threading is off, so the original's `ThreadPool` work runs directly on the main thread, which can briefly block the page. `FoliageStorageV2`'s long-running thread is not replaced yet.
 - **Memory.** WebAssembly memory has a hard ceiling, so maps have to load one at a time.
 
 ## Browser blockers in the source
 
 | Area | Where | Plan |
 |---|---|---|
-| Steam | 47 files reference Steam services, `SteamworksProvider` calls `SteamAPI.Init` | Implement a browser provider behind the existing `SDG.Provider` interfaces |
+| Steam | 47 files call Steam directly, through 956 native functions | Done for startup: `SteamCore.jslib` implements the native API offline, and `tools/gen-steam.mjs` generates logging entries for the rest |
 | Sockets | `NetTransport_SystemSockets` (4 files) | Replace with a WebRTC transport behind `SDG.NetTransport` |
-| Threads | 5 files | Run the work on the main thread or in coroutines |
+| Threads | 5 files | `ThreadPool` work now runs on the main thread. The foliage thread is still open |
+| Json.NET | SDK DLL needs `Reflection.Emit` | Done: replaced by `com.unity.nuget.newtonsoft-json`, bundled with the editor |
 | Native imports | `WindowsConsole` (`kernel32`) | Exclude from the browser build |
 | Plugin loading | `ModuleHook` uses `Assembly.Load` | Not possible under IL2CPP, so plugin modules are unsupported |
 | Process launch | `WebUtils`, `ReadWrite` | Replace with browser equivalents |
@@ -46,7 +47,9 @@ The original reads game data through `System.IO` from the install directory. In 
 | Path | Role |
 |---|---|
 | `src/`, `assets/` | Original code and data, read-only |
-| `engine/unity/` | Browser Unity project sources |
+| `engine/unity/` | Slice Unity project sources, the asset converter and the file system plugin |
+| `engine/overlay/` | Files added to the composed game project, including the Steam layer |
+| `engine/patches.json` | Find-and-replace rules applied to the composed copy of the source |
 | `web/` | Page, package reader and boot code |
 | `tools/` | Packer and local server |
 | `tests/` | Package tests and browser end-to-end test |

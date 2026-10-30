@@ -41,6 +41,21 @@ public static class ConvertAssets
         }
 
         bundle.Unload(true);
+        Recompress(Path.Combine(assets, "Bundles/core.masterbundle"), Path.Combine(output, "Bundles/core.masterbundle"));
+    }
+
+    static void Recompress(string input, string target)
+    {
+        if (File.Exists(target) && File.GetLastWriteTimeUtc(target) >= File.GetLastWriteTimeUtc(input))
+            return;
+
+        Directory.CreateDirectory(Path.GetDirectoryName(target));
+        var request = AssetBundle.RecompressAssetBundleAsync(input, target, BuildCompression.LZ4Runtime);
+        while (!request.isDone)
+            System.Threading.Thread.Sleep(50);
+        if (!request.success)
+            throw new InvalidDataException($"Recompressing {input} failed: {request.result} {request.humanReadableResult}");
+        Debug.Log($"[convert] recompressed {input}: {new FileInfo(input).Length} to {new FileInfo(target).Length} bytes");
     }
 
     static Dictionary<string, string> ReadMaterialTextures(string directory)
