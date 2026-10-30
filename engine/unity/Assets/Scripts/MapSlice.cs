@@ -1,7 +1,7 @@
 using System;
+using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
-using System.Text.RegularExpressions;
 using UnityEngine;
 
 public static class MapSlice
@@ -16,18 +16,19 @@ public static class MapSlice
     static void Load()
     {
         var mapPath = Directory.GetDirectories("/game/Maps")[0];
-        var layers = CreateLayers();
         var material = new Material(Shader.Find("Nature/Terrain/Standard"));
+        var layerCache = new Dictionary<string, TerrainLayer>();
 
         var tiles = 0;
-        foreach (var file in Directory.GetFiles(mapPath + "/Landscape/Heightmaps", "*.heightmap"))
+        foreach (var line in File.ReadAllLines(mapPath + "/Converted/TerrainLayers.txt"))
         {
-            var match = Regex.Match(Path.GetFileName(file), @"^Tile_(-?\d+)_(-?\d+)_Source\.heightmap$");
-            if (match.Success)
-            {
-                CreateTile(mapPath, int.Parse(match.Groups[1].Value, CultureInfo.InvariantCulture), int.Parse(match.Groups[2].Value, CultureInfo.InvariantCulture), layers, material);
-                tiles++;
-            }
+            var fields = line.Split('\t');
+            var coord = fields[0].Split(',');
+            var layers = new TerrainLayer[fields.Length - 1];
+            for (var i = 0; i < layers.Length; i++)
+                layers[i] = LoadLayer(fields[i + 1], layerCache);
+            CreateTile(mapPath, int.Parse(coord[0], CultureInfo.InvariantCulture), int.Parse(coord[1], CultureInfo.InvariantCulture), layers, material);
+            tiles++;
         }
 
         Physics.SyncTransforms();
@@ -52,22 +53,22 @@ public static class MapSlice
         return Physics.Raycast(position + Vector3.up * 1024, Vector3.down, out var hit, 4096) ? hit.point.y : float.NaN;
     }
 
-    static TerrainLayer[] CreateLayers()
+    static TerrainLayer LoadLayer(string path, Dictionary<string, TerrainLayer> cache)
     {
-        var colors = new[]
-        {
-            new Color(0.33f, 0.42f, 0.21f), new Color(0.40f, 0.34f, 0.24f), new Color(0.46f, 0.45f, 0.42f), new Color(0.55f, 0.50f, 0.36f),
-            new Color(0.30f, 0.36f, 0.22f), new Color(0.27f, 0.23f, 0.18f), new Color(0.80f, 0.82f, 0.85f), new Color(0.36f, 0.36f, 0.36f)
-        };
-        var layers = new TerrainLayer[SplatmapLayers];
-        for (var i = 0; i < layers.Length; i++)
-        {
-            var texture = new Texture2D(1, 1, TextureFormat.RGBA32, false);
-            texture.SetPixel(0, 0, colors[i]);
-            texture.Apply();
-            layers[i] = new TerrainLayer { diffuseTexture = texture, tileSize = new Vector2(16, 16) };
-        }
-        return layers;
+        if (cache.TryGetValue(path, out var layer))
+            return layer;
+
+        var texture = new Texture2D(2, 2, TextureFormat.RGBA32, true);
+        texture.LoadImage(File.ReadAllBytes("/game/Textures/" + path));
+        var pixels = texture.GetPixels32();
+        for (var i = 0; i < pixels.Length; i++)
+            pixels[i].a = 0;
+        texture.SetPixels32(pixels);
+        texture.Apply(true);
+
+        layer = new TerrainLayer { diffuseTexture = texture, tileSize = new Vector2(texture.width * 0.25f, texture.height * 0.25f) };
+        cache[path] = layer;
+        return layer;
     }
 
     static void CreateTile(string mapPath, int x, int y, TerrainLayer[] layers, Material material)

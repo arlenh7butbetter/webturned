@@ -90,6 +90,23 @@ function Build-Game([string]$method, [string]$logName) {
     if ($process.ExitCode -ne 0) { throw "$method failed, see $log" }
 }
 
+function Convert-Assets {
+    $project = Join-Path $buildDir "unity"
+    $log = Join-Path $buildDir "logs\convert.log"
+    $env:UNTURNED_ASSETS = Join-Path $root "assets"
+    $env:UNTURNED_CONVERTED = Join-Path $buildDir "converted"
+    $env:UNTURNED_MAPS = $Maps -join ";"
+    Write-Host "== Convert assets (log: $log)"
+    $process = Start-Process -FilePath $unity -Wait -PassThru -ArgumentList @(
+        "-batchmode", "-quit",
+        "-projectPath", "`"$project`"",
+        "-buildTarget", "WebGL",
+        "-executeMethod", "ConvertAssets.Run",
+        "-logFile", "`"$log`""
+    )
+    if ($process.ExitCode -ne 0) { throw "Asset conversion failed with exit code $($process.ExitCode), see $log" }
+}
+
 function Build-Package {
     $player = Join-Path $buildDir "player\Build"
     $staging = Join-Path $buildDir "package\player"
@@ -99,8 +116,9 @@ function Build-Package {
     Copy-Item (Join-Path $player "player.framework.js") (Join-Path $staging "game.framework.js")
     Copy-Item (Join-Path $player "player.wasm") (Join-Path $staging "game.wasm")
 
-    $groups = @("player=$staging@player")
+    $groups = @("player=$staging@player", "game=$(Join-Path $buildDir "converted\Textures")@game/Textures")
     foreach ($map in $Maps) {
+        $groups += "map/$map=$(Join-Path $buildDir "converted\Maps\$map")@game/Maps/$map/Converted"
         foreach ($part in "Landscape", "Spawns") {
             $groups += "map/$map=$(Join-Path $root "assets\Maps\$map\$part")@game/Maps/$map/$part"
         }
@@ -131,7 +149,10 @@ switch ($Command) {
         Build-Game "FullBuild.BuildPlayer" "game"
     }
     "build" {
-        if (-not $PackageOnly) { Build-Player }
+        if (-not $PackageOnly) {
+            Build-Player
+            Convert-Assets
+        }
         Build-Package
     }
     "test" {
