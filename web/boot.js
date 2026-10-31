@@ -8,7 +8,7 @@ function blobUrl(data, type) {
 async function boot() {
   const map = new URLSearchParams(location.search).get("map") || "PEI";
   statusLine.textContent = "Reading package";
-  const pkg = await openPackage("game.unturned");
+  const pkg = await openPackage(window.unturnedPackageUrl ?? "game.unturned");
 
   const unturnedFiles = [];
   const wanted = [...pkg.entries.values()].filter((entry) => entry.group === "game" || entry.group === `map/${map}`);
