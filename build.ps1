@@ -141,7 +141,12 @@ function Build-Package([string]$playerName, [string]$output, [switch]$FullData) 
     foreach ($map in $Maps) {
         $groups += "map/$map=$(Join-Path $buildDir "converted\Maps\$map")@game/Maps/$map/Converted"
         if ($FullData) {
-            $groups += "map/$map=$(Join-Path $root "assets\Maps\$map")@game/Maps/$map"
+            $mapFiles = Join-Path $buildDir "package\Maps\$map"
+            robocopy (Join-Path $root "assets\Maps\$map") $mapFiles /MIR /NFL /NDL /NJH /NJS /NP | Out-Null
+            if ($LASTEXITCODE -ge 8) { throw "Copying map $map failed with exit code $LASTEXITCODE" }
+            robocopy (Join-Path $buildDir "converted\MapBundles\$map") $mapFiles /E /NFL /NDL /NJH /NJS /NP | Out-Null
+            if ($LASTEXITCODE -ge 8) { throw "Copying converted bundles for $map failed with exit code $LASTEXITCODE" }
+            $groups += "map/$map=$mapFiles@game/Maps/$map"
         } else {
             foreach ($part in "Landscape", "Spawns") {
                 $groups += "map/$map=$(Join-Path $root "assets\Maps\$map\$part")@game/Maps/$map/$part"

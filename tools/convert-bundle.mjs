@@ -1,19 +1,101 @@
 import { closeSync, openSync, writeSync } from "node:fs";
 import { readBundle, readObject, readSerializedFile } from "./unity-bundle.mjs";
 
-const WindowsTarget = 19;
 const WebGLTarget = 20;
+const DesktopTargets = new Set([5, 19, WebGLTarget]);
 const Texture2D = 28;
 const SerializedFileNode = 4;
 const zeroes = Buffer.alloc(16);
 
 const [input, output] = process.argv.slice(2);
 const bundle = readBundle(input);
-const main = bundle.nodes.find((node) => node.flags & SerializedFileNode);
+const serializedNodes = bundle.nodes.filter((node) => node.flags & SerializedFileNode);
 const streams = bundle.nodes.find((node) => node.name.endsWith(".resS"));
+if (serializedNodes.length === 0) throw new Error(`${input} has no serialized files`);
+
+function writeBundle(path, nodes) {
+  const totalData = nodes.reduce((sum, node) => sum + node.size, 0);
+  const nodeTable = [];
+  let nodeOffset = 0;
+  for (const node of nodes) {
+    const record = Buffer.alloc(20);
+    record.writeBigInt64BE(BigInt(nodeOffset), 0);
+    record.writeBigInt64BE(BigInt(node.size), 8);
+    record.writeUInt32BE(node.flags, 16);
+    nodeTable.push(record, Buffer.from(`${node.name}\0`));
+    nodeOffset += node.size;
+  }
+  const nodeCount = Buffer.alloc(4);
+  nodeCount.writeInt32BE(nodes.length);
+  const blocks = Buffer.alloc(4 + 10);
+  blocks.writeInt32BE(1, 0);
+  blocks.writeUInt32BE(totalData, 4);
+  blocks.writeUInt32BE(totalData, 8);
+  const info = Buffer.concat([Buffer.alloc(16), blocks, nodeCount, ...nodeTable]);
+
+  const signature = Buffer.from("UnityFS\0");
+  const versions = Buffer.from(`${bundle.header.playerVersion}\0${bundle.header.engineVersion}\0`);
+  const fields = Buffer.alloc(4 + versions.length + 8 + 12);
+  fields.writeUInt32BE(bundle.header.version, 0);
+  versions.copy(fields, 4);
+  const fieldsAt = 4 + versions.length;
+  let headerSize = signature.length + fields.length;
+  const headerPadding = (16 - (headerSize % 16)) % 16;
+  headerSize += headerPadding;
+  const afterInfo = headerSize + info.length;
+  const dataPadding = (16 - (afterInfo % 16)) % 16;
+  fields.writeBigInt64BE(BigInt(afterInfo + dataPadding + totalData), fieldsAt);
+  fields.writeUInt32BE(info.length, fieldsAt + 8);
+  fields.writeUInt32BE(info.length, fieldsAt + 12);
+  fields.writeUInt32BE(0x40 | 0x200, fieldsAt + 16);
+
+  const out = openSync(path, "w");
+  const write = (buffer) => {
+    let done = 0;
+    while (done < buffer.length) done += writeSync(out, buffer, done, Math.min(buffer.length - done, 0x40000000));
+  };
+  write(signature);
+  write(fields);
+  write(zeroes.subarray(0, headerPadding));
+  write(info);
+  write(zeroes.subarray(0, dataPadding));
+  for (const node of nodes) {
+    for (const chunk of node.chunks) write(chunk);
+  }
+  closeSync(out);
+}
+
+function retargetLegacyFile(node) {
+  const end = node.data.indexOf(0, 20);
+  const position = end + 1;
+  const target = node.data.readInt32LE(position);
+  if (!DesktopTargets.has(target)) throw new Error(`${node.name} has unexpected build target ${target}`);
+  node.data.writeInt32LE(WebGLTarget, position);
+}
+
+function isLegacy(node) {
+  return node.data.readUInt32BE(8) < 22;
+}
+
+if (serializedNodes.every(isLegacy)) {
+  if (streams) throw new Error(`${input} streams textures from a serialized file version the converter can't inline`);
+  serializedNodes.forEach(retargetLegacyFile);
+  writeBundle(output, bundle.nodes.map((node) => ({ name: node.name, flags: node.flags, size: node.data.length, chunks: [node.data] })));
+
+  const check = readBundle(output);
+  for (const node of check.nodes.filter((candidate) => candidate.flags & SerializedFileNode)) {
+    const target = node.data.readInt32LE(node.data.indexOf(0, 20) + 1);
+    if (target !== WebGLTarget) throw new Error(`Output ${node.name} has build target ${target}`);
+  }
+  console.log(`${input}: ${serializedNodes.length} legacy serialized files retargeted`);
+  process.exit(0);
+}
+
+if (serializedNodes.length !== 1) throw new Error(`${input} has ${serializedNodes.length} serialized files`);
+const main = serializedNodes[0];
 const resource = bundle.nodes.find((node) => node.name.endsWith(".resource"));
 const file = readSerializedFile(main.data);
-if (file.target !== WindowsTarget && file.target !== WebGLTarget) throw new Error(`Unexpected build target ${file.target}`);
+if (!DesktopTargets.has(file.target)) throw new Error(`Unexpected build target ${file.target}`);
 if (file.bigEndian) throw new Error("Big-endian serialized files are not supported");
 
 const textureType = file.types.find((type) => type.classId === Texture2D);
@@ -39,103 +121,41 @@ function inlineTexture(object) {
   return { prefix, length, image, padding, size: prefix.length + 4 + image.length + padding + 16 };
 }
 
-const metadataEnd = 48 + file.metadataSize;
+if (48 + file.metadataSize > file.dataOffset) throw new Error("Metadata overlaps object data");
 const head = Buffer.from(main.data.subarray(0, file.dataOffset));
 head.writeInt32LE(WebGLTarget, file.targetPosition);
 
 const ordered = [...file.objects].sort((a, b) => a.offset - b.offset);
 const pieces = new Map();
+const emptyStream = Buffer.alloc(16);
+const chunks = [head];
 let position = 0;
-let inlined = 0;
 let inlinedBytes = 0;
 for (const object of ordered) {
-  position += (8 - (position % 8)) % 8;
+  const padding = (8 - (position % 8)) % 8;
+  if (padding) chunks.push(zeroes.subarray(0, padding));
+  position += padding;
+
   const piece = object.classId === Texture2D ? inlineTexture(object) : null;
   const size = piece ? piece.size : object.size;
   if (piece) {
     pieces.set(object, piece);
-    inlined++;
     inlinedBytes += piece.image.length;
+    chunks.push(piece.prefix, piece.length, piece.image, zeroes.subarray(0, piece.padding), emptyStream);
+  } else {
+    const start = file.dataOffset + object.offset;
+    chunks.push(main.data.subarray(start, start + object.size));
   }
   head.writeBigInt64LE(BigInt(position), object.offsetPosition);
   head.writeUInt32LE(size, object.offsetPosition + 8);
-  object.newOffset = position;
-  object.newSize = size;
   position += size;
 }
-if (metadataEnd > file.dataOffset) throw new Error("Metadata overlaps object data");
 const serializedSize = file.dataOffset + position;
 head.writeBigInt64BE(BigInt(serializedSize), 24);
 
-const nodes = [{ name: main.name, flags: SerializedFileNode, size: serializedSize }];
-if (resource) nodes.push({ name: resource.name, flags: 0, size: resource.data.length });
-const totalData = nodes.reduce((sum, node) => sum + node.size, 0);
-
-const nodeTable = [];
-let nodeOffset = 0;
-for (const node of nodes) {
-  const record = Buffer.alloc(20);
-  record.writeBigInt64BE(BigInt(nodeOffset), 0);
-  record.writeBigInt64BE(BigInt(node.size), 8);
-  record.writeUInt32BE(node.flags, 16);
-  nodeTable.push(record, Buffer.from(`${node.name}\0`));
-  nodeOffset += node.size;
-}
-const nodeCount = Buffer.alloc(4);
-nodeCount.writeInt32BE(nodes.length);
-const blocks = Buffer.alloc(4 + 10);
-blocks.writeInt32BE(1, 0);
-blocks.writeUInt32BE(totalData, 4);
-blocks.writeUInt32BE(totalData, 8);
-const info = Buffer.concat([Buffer.alloc(16), blocks, nodeCount, ...nodeTable]);
-
-const strings = Buffer.from(`UnityFS\0`);
-const versions = Buffer.from(`${bundle.header.playerVersion}\0${bundle.header.engineVersion}\0`);
-const fields = Buffer.alloc(4 + versions.length + 8 + 12);
-fields.writeUInt32BE(bundle.header.version, 0);
-versions.copy(fields, 4);
-const fieldsAt = 4 + versions.length;
-let headerSize = strings.length + fields.length;
-const headerPadding = (16 - (headerSize % 16)) % 16;
-headerSize += headerPadding;
-const afterInfo = headerSize + info.length;
-const dataPadding = (16 - (afterInfo % 16)) % 16;
-fields.writeBigInt64BE(BigInt(afterInfo + dataPadding + totalData), fieldsAt);
-fields.writeUInt32BE(info.length, fieldsAt + 8);
-fields.writeUInt32BE(info.length, fieldsAt + 12);
-fields.writeUInt32BE(0x40 | 0x200, fieldsAt + 16);
-
-const out = openSync(output, "w");
-const write = (buffer) => {
-  let done = 0;
-  while (done < buffer.length) done += writeSync(out, buffer, done, Math.min(buffer.length - done, 0x40000000));
-};
-write(strings);
-write(fields);
-write(zeroes.subarray(0, headerPadding));
-write(info);
-write(zeroes.subarray(0, dataPadding));
-
-write(head);
-let written = 0;
-const emptyStream = Buffer.alloc(16);
-for (const object of ordered) {
-  if (object.newOffset > written) write(zeroes.subarray(0, object.newOffset - written));
-  const piece = pieces.get(object);
-  if (piece) {
-    write(piece.prefix);
-    write(piece.length);
-    write(piece.image);
-    write(zeroes.subarray(0, piece.padding));
-    write(emptyStream);
-  } else {
-    const start = file.dataOffset + object.offset;
-    write(main.data.subarray(start, start + object.size));
-  }
-  written = object.newOffset + object.newSize;
-}
-if (resource) write(resource.data);
-closeSync(out);
+const nodes = [{ name: main.name, flags: SerializedFileNode, size: serializedSize, chunks }];
+if (resource) nodes.push({ name: resource.name, flags: 0, size: resource.data.length, chunks: [resource.data] });
+writeBundle(output, nodes);
 
 const result = readBundle(output);
 const resultMain = result.nodes.find((node) => node.flags & SerializedFileNode);
@@ -162,4 +182,4 @@ for (const object of resultFile.objects) {
   }
 }
 
-console.log(`${input}: ${inlined} textures inlined, ${inlinedBytes} bytes, ${file.objects.length} objects, ${totalData} bytes of data`);
+console.log(`${input}: ${pieces.size} textures inlined, ${inlinedBytes} bytes, ${file.objects.length} objects verified`);

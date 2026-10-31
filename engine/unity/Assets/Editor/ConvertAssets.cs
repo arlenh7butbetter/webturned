@@ -38,6 +38,10 @@ public static class ConvertAssets
                 manifest.Append('\n');
             }
             File.WriteAllText(Path.Combine(directory, "TerrainLayers.txt"), manifest.ToString());
+
+            var mapRoot = Path.Combine(assets, "Maps", map);
+            foreach (var file in Directory.EnumerateFiles(mapRoot, "*.unity3d", SearchOption.AllDirectories))
+                ConvertBundle(file, Path.Combine(output, "MapBundles", map, Path.GetRelativePath(mapRoot, file)));
         }
 
         bundle.Unload(true);

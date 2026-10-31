@@ -73,10 +73,30 @@ function decodeLz4(stored, size) {
   return output;
 }
 
+function readRawBundle(buffer, cursor) {
+  cursor.skip(4);
+  const header = { version: 8, playerVersion: cursor.cstring(), engineVersion: cursor.cstring() };
+  cursor.skip(4);
+  const dataStart = cursor.u32();
+  cursor.position = dataStart;
+  const nodes = [];
+  const nodeCount = cursor.u32();
+  for (let i = 0; i < nodeCount; i++) {
+    const name = cursor.cstring();
+    const offset = cursor.u32();
+    const size = cursor.u32();
+    const serialized = !/\.(resS|resource)$/.test(name);
+    nodes.push({ name, flags: serialized ? 4 : 0, data: buffer.subarray(dataStart + offset, dataStart + offset + size) });
+  }
+  return { header, nodes };
+}
+
 export function readBundle(path) {
   const buffer = readFileSync(path);
   const cursor = new Cursor(buffer);
-  if (cursor.cstring() !== "UnityFS") throw new Error(`${path} is not a UnityFS bundle`);
+  const signature = cursor.cstring();
+  if (signature === "UnityRaw") return readRawBundle(buffer, cursor);
+  if (signature !== "UnityFS") throw new Error(`${path} is not a UnityFS bundle`);
   const version = cursor.u32();
   const header = { version, playerVersion: cursor.cstring(), engineVersion: cursor.cstring() };
   cursor.skip(8);

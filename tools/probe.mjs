@@ -48,12 +48,25 @@ await send("Runtime.enable");
 await send("Page.enable");
 await send("Page.navigate", { url: `http://127.0.0.1:${server.address().port}/index.html` });
 const clicks = (clickSpec ?? "").split(";").filter(Boolean).map((spec) => {
-  const [position, at] = spec.split("@");
-  const [x, y] = position.split(",").map(Number);
+  const [action, at] = spec.split("@");
+  if (action.startsWith("key:")) {
+    const [, code, key, virtualCode, hold] = action.split(":");
+    return { keyPress: { code, key, windowsVirtualKeyCode: Number(virtualCode) }, hold: Number(hold), at: Number(at) };
+  }
+  const [x, y] = action.split(",").map(Number);
   return { x, y, at: Number(at) };
 });
 
-async function click({ x, y }, index) {
+async function click({ x, y, keyPress, hold }, index) {
+  if (keyPress) {
+    await send("Input.dispatchKeyEvent", { type: "keyDown", ...keyPress });
+    await new Promise((resolve) => setTimeout(resolve, hold * 1000));
+    await send("Input.dispatchKeyEvent", { type: "keyUp", ...keyPress });
+    logs.push(`[probe] held ${keyPress.code} for ${hold}s`);
+    const keyShot = await send("Page.captureScreenshot", { format: "png" });
+    if (keyShot) writeFileSync(shotPath.replace(/\.png$/, `-${index}.png`), Buffer.from(keyShot.data, "base64"));
+    return;
+  }
   await send("Input.dispatchMouseEvent", { type: "mouseMoved", x, y });
   await new Promise((resolve) => setTimeout(resolve, 500));
   await send("Input.dispatchMouseEvent", { type: "mousePressed", x, y, button: "left", clickCount: 1 });
