@@ -13,12 +13,13 @@ Working:
 - The real main menu and loading screens
 - Loading into PEI in singleplayer
 - Walking, terrain, trees, buildings and water
+- The inventory screen
+- Sound, including the ambient loops
 - Quitting, which reloads the page since a browser tab can't really exit
 
 Not working yet, or not tested:
 
-- **Sound** is being converted right now, so don't expect it to work yet.
-- **Gameplay past walking around** hasn't been tested. That means zombies, items, inventory, crafting and vehicles.
+- **Zombies, combat, picking up items, crafting and vehicles** haven't been tested yet.
 - **Saves** don't survive a page reload. The game's files live in memory.
 - **Only PEI is packaged.** The other maps need their bundles converted and on-demand loading.
 - **Steam stuff** is faked offline, so Workshop, the item store and matchmaking don't do anything.
@@ -92,7 +93,7 @@ If you're poking around, those three are where most of the interesting stuff is.
 
 ## Hosting it yourself
 
-The package is big, around 350 MB, so you'll probably want it on a CDN. Set this in `index.html` before `runtime.js` loads:
+The package is big, around 400 MB, so you'll probably want it on a CDN. Set this in `index.html` before `runtime.js` loads:
 
 ```html
 <script>window.unturnedPackageUrl = "https://your-cdn.example/game.unturned";</script>

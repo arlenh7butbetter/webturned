@@ -1,81 +1,70 @@
 # Porting Progress
 
-Last updated 2026-10-30. Everything under "Verified" was run and checked. **The original game is not playable in a browser yet.** It runs as far as its loading screen, then stops because its main asset bundle can't load.
-
-## What each build is
-
-| Output | Command | What it is |
-|---|---|---|
-| `dist/` | `build.ps1 build` | Vertical slice: new code that loads, renders and walks on real PEI terrain |
-| `build/game-dist/` | `build.ps1 game` | The original game code, stopping at the loading screen |
-
-`dist/` deliberately holds the slice until the original game does more than the slice can.
+Last updated 2026-10-31. Everything under "Verified" was run and checked, using headless Chrome with software rendering unless stated otherwise. **The original game runs in a browser and you can walk around PEI. It isn't complete.**
 
 ## Verified
 
 | What | How it was checked |
 |---|---|
-| Extraction of source and assets | SHA-256 of every file, see `EXTRACTION_REPORT.md` |
-| Headless Unity 6000.6.7f1 WebGL builds | `build.ps1 build` and `build.ps1 game` exit 0 |
-| `dist/` holds exactly `index.html`, `runtime.js`, `game.unturned` | Directory listing |
-| Package format: round trip, range preload, compression, rejection of bad data | `tests/package.test.mjs`, 8 of 8 pass |
-| Slice: real heightmaps, splatmaps, spawn points and textures | `tests/browser.mjs`, plus screenshots. Terrain height at the first spawn equals the spawn's stored Y, 34.35 |
-| Slice: terrain collision and walking with W | Player moves about 22 m uphill and stays grounded |
-| All original source compiles for the WebGL player | `build.ps1 compile`: 0 errors, `src/` unchanged |
-| Full original game links as a WebGL player | Unity build result `Succeeded`, 50 MB `.wasm` before stripping changes |
-| Original startup code runs in headless Chrome | Game log: version 3.26.3.13, platform `WebGLPlayer`, no exceptions through startup |
-| Original UI, fonts, localization and loading screens render | Screenshots in `build/logs` from the game's own `LoadingUI` |
-| Original asset search parses the real data | Loading bar shows 6,114 asset definitions found |
-| `core.masterbundle` converts from LZMA to LZ4 | Converter output 214 MB. The player then gets past decompression |
+| Source and asset extraction | SHA-256 of every file, see `EXTRACTION_REPORT.md` |
+| `extract.bat` rebuilds `src/` and `assets/` | Fresh-folder run matched all 15,389 files by SHA-256 |
+| Package format | `tests/package.test.mjs`, 8 of 8 pass |
+| Original code compiles and links for WebGL | `build.ps1 build`: 0 errors, `src/` unchanged |
+| Original startup, UI, fonts, localization | Game log and screenshots |
+| `core.masterbundle` converted for WebGL | 5,360 textures inlined, 1,389 audio clips replaced, 103,554 objects verified by the converter |
+| Real barn main menu | Screenshot, log shows 258 menu renderers |
+| Singleplayer on PEI loads | Game log, screenshots of terrain, trees, buildings, water, wheat fields, bridge |
+| Walking and terrain collision | Position logged moving about 10 m uphill while W was held |
+| Water draws behind terrain | Screenshots, after keeping depth through `SkyFog` |
+| Inventory dashboard opens with Tab | Screenshot shows inventory, character preview and item with condition |
+| Audio decodes and plays | Browser API counters: 156 clips decoded, 0 failed, 73 started, non-silent samples |
+| Quit reloads the page without crashing | Exit, Quit, confirm: page restarted, no memory error |
+| Long session stability | About 2 minutes in PEI with varied input, no game errors |
+| Live site over HTTPS loading from a CDN | Reached the loading screen on `unturned.arlenh7.com` in a real browser pane |
 
-## Current failure
+## Not verified
 
-```
-The file can not be loaded because it was created for another build target
-File's Build target is: 19
-```
+- **Hearing it.** Decoding and playback are measured, but nobody has confirmed how it sounds.
+- **Mouse look.** The test browsers reject pointer lock, so it needs a normal browser window.
+- **Real GPU performance.** Frame rate and memory on real hardware are unmeasured.
+- **Zombies, combat, picking up items, crafting, vehicles.** No test has exercised them yet.
+- **In-game Exit back to the menu.** Only quitting from the main menu has been tested.
+- **The `BundleTool` patch.** This editor menu tool compiles but has not been run.
 
-`core.masterbundle` is built for 64-bit Windows, so the WebGL player refuses it. Everything the game loads from it, including items, models and terrain textures, depends on this.
+## Known problems
 
-## Implemented but not verified
-
-- **Mouse look in the slice.** The browser pane rejects pointer lock with `WrongDocumentError`, and clicking the canvas hangs headless Chrome. Check it in a normal Chrome window.
-- **Real GPU performance.** All game runs used software rendering. Frame rates and memory on real hardware are unmeasured.
-- **Main-thread asset loading on real hardware.** It blocked the page for about 2 s in testing, and the browser may flag it on slower machines.
-- **`BundleTool` patch.** This editor menu tool compiles against the new API but has not been run.
-- **Foliage worker thread.** `FoliageStorageV2` still starts a `Thread`, which is expected to fail once a map loads.
-
-## Known differences from the original
-
-- **Steam is simulated offline.** `SteamCore.jslib` implements 55 of 958 native functions. The rest log `[steam] not implemented: <name>` and return zero. Steam callbacks never fire, so anything waiting on one won't finish.
-- **Online features don't work.** Live config and matchmaking filter requests fail in the browser, and the game logs and retries them. Workshop, inventory and multiplayer are unavailable.
+- **Saves are lost on reload.** The game's files live in memory.
+- **Only PEI is packaged.** Other maps need converting and on-demand loading, since they total about 1.4 GB.
+- **Foliage thread.** `FoliageStorageV2` still starts a `Thread`, so grass and foliage may be missing.
+- **Water is flat gray.** It uses the SDK's `Water_Fallback` shader.
+- **Menu visual glitch.** Bright stray patches appear at the left and bottom-left of the barn menu.
+- **Steam is simulated offline.** About 55 of 956 native functions are implemented. The rest log their name and return zero, and callbacks never fire, so inventory items, Workshop and matchmaking don't work.
+- **Online requests fail.** Live config, news and matchmaking filters fail in the browser, and the game logs and retries them.
+- **Duplicate sounds.** Clips with the same name, channels, frequency and length share one encoded copy.
+- **Package size.** `game.unturned` is about 397 MB for one map.
 - **Plugin modules are unsupported.** `Assembly.Load` can't work under IL2CPP.
-- **The browser reports itself as `EClientPlatform.Windows`**, because a new value would change the network protocol.
-- **Slice only:** it uses `Nature/Terrain/Standard`, not the original landscape shader, has fixed lighting, and has no objects, trees, water, zombies or UI. A thin seam shows at tile edges.
-
-## Blockers that need you
-
-1. **Push requires your login.** The credential helper can't prompt here, so commits are local only. Run `git push origin main` yourself.
-2. **The repo is public**, though you described it as closed. `src/` and `assets/` are kept out of Git for this reason. Make the repo private before removing them from `.gitignore`.
-3. **The license question is open again.** Your "private project" answer assumed a closed repo. See `EXTRACTION_REPORT.md`. A build that phones can reach may conflict with sections 1 and 2 of the SDK license.
 
 ## Decisions
 
 - **Unity WebGL/IL2CPP** over standalone .NET WebAssembly. See `docs/ARCHITECTURE.md`.
 - **Unity 6000.6.7f1**, because 2022.3.62f3 has no WebGL module installed. API changes live in `engine/patches.json`.
-- **`src/` and `assets/` are never edited.** The build composes a project in `build/full`, then applies the API updater, `engine/overlay` and `engine/patches.json` to that copy.
-- **Patch rules, not copied files**, so SDG's source stays out of the public repo. A rule that stops matching fails the build.
+- **`src/` and `assets/` are never edited.** The build composes a project in `build/full`, then applies the API updater, `engine/overlay` and `engine/patches.json`.
+- **Patch rules, not copied files**, so SDG's source stays out of the repo. A rule that stops matching fails the build.
 - **Steam replaced at the native API level.** The game calls Steam directly in 47 files, so this avoids editing them.
-- **`Newtonsoft.Json` replaced** by Unity's IL2CPP-compatible package, because the SDK's DLL needs `Reflection.Emit`.
-- **Engine and managed stripping reduced**, because bundles and Json.NET reference types the build can't see.
-- **Worker thread pool jobs run directly on the main thread.** They finish on their own, and WebGL has no threads.
-- **Prefab and material caches key on `EntityId`.** Unity rejects converting it to `int`, and a hash could make different prefabs share a key.
+- **Bundles rewritten, not rebuilt.** `tools/convert-bundle.mjs` inlines texture data and changes the build target, then verifies every object. Shaders are swapped at load by the game's own `ShaderConsolidator`.
+- **Audio re-encoded by Unity.** Clips are decoded in the editor from a temporary copy and encoded for WebGL, then spliced in.
+- **Worker thread pool jobs run on the main thread.** They finish on their own, and WebGL has no threads. This can block the page for a few seconds while loading.
+- **Quit reloads the page**, because shutting the engine down left its main loop running on freed memory.
+
+## Licensing
+
+The repo is private as of 2026-10-31. `src/` and `assets/` stay out of Git regardless. The U3 SDK license limits mods to PCs running Windows, macOS or Linux, and a public site can be opened on a phone. The owner has been told about this and is hosting a build on their own domain and CDN.
 
 ## Next steps
 
-1. Make `core.masterbundle` load for WebGL. Start by testing a converted copy with its target changed, to learn what fails next. Direct3D shaders are expected to render incorrectly until replaced.
-2. Replace bundle shaders with WebGL versions built from the 70 shaders in `assets/U3-SDK`.
-3. Apply the same conversion to the map bundles, which are probably LZMA too.
-4. Reach the main menu, then replace the foliage thread.
-5. Load singleplayer on PEI, then implement the Steam functions it needs.
-6. After singleplayer works, add the WebRTC transport.
+1. Keep saves across reloads with browser storage.
+2. Test zombies, combat, items and crafting, then fix what breaks.
+3. Replace the foliage thread.
+4. Convert the other 9 maps and load them on demand.
+5. Replace `Water_Fallback` with real water if the shipped shaders can be recovered.
+6. After singleplayer is solid, add the WebRTC transport.
