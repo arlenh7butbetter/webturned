@@ -1,6 +1,6 @@
-# Unturned Web Port
+# Webturned
 
-Unturned running in a browser. Not a remake: this compiles the game's real C# from the U3 SDK to WebAssembly with Unity's WebGL build, then feeds it the real game files from a Steam install.
+Unturned running in a browser, ported by Arlen. Not a remake: this compiles the game's real C# from the U3 SDK to WebAssembly with Unity's WebGL build, then feeds it the real game files from a Steam install.
 
 It's an experiment and it's rough, but it does work. You can get through the menu, load into PEI and walk around. Most of what's left is finding out what breaks next.
 

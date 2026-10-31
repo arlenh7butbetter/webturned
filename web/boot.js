@@ -26,7 +26,7 @@ async function boot() {
     frameworkUrl: blobUrl(await pkg.read("player/game.framework.js"), "text/javascript"),
     codeUrl: blobUrl(await pkg.read("player/game.wasm"), "application/wasm"),
     companyName: "unturned-web-port",
-    productName: "Unturned Web Port",
+    productName: "Webturned",
     productVersion: pkg.build,
     unturnedFiles,
     unturnedMap: map,
