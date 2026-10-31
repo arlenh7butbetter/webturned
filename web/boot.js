@@ -30,6 +30,12 @@ async function boot() {
     productVersion: pkg.build,
     unturnedFiles,
     unturnedMap: map,
+    errorHandler: (message) => {
+      console.error(message);
+      statusLine.hidden = false;
+      statusLine.textContent = `Error: ${message}`;
+      return true;
+    },
   }, (progress) => {
     statusLine.textContent = `Starting ${Math.round(progress * 100)}%`;
   });

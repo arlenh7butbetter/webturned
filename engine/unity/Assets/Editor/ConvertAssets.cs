@@ -41,21 +41,45 @@ public static class ConvertAssets
         }
 
         bundle.Unload(true);
-        Recompress(Path.Combine(assets, "Bundles/core.masterbundle"), Path.Combine(output, "Bundles/core.masterbundle"));
+        ConvertBundle(Path.Combine(assets, "Bundles/core.masterbundle"), Path.Combine(output, "Bundles/core.masterbundle"));
     }
 
-    static void Recompress(string input, string target)
+    static void ConvertBundle(string input, string target)
     {
         if (File.Exists(target) && File.GetLastWriteTimeUtc(target) >= File.GetLastWriteTimeUtc(input))
             return;
 
         Directory.CreateDirectory(Path.GetDirectoryName(target));
-        var request = AssetBundle.RecompressAssetBundleAsync(input, target, BuildCompression.LZ4Runtime);
+        var raw = target + ".raw";
+        var rewritten = target + ".webgl";
+        Recompress(input, raw, BuildCompression.Uncompressed);
+        RunNode(Environment.GetEnvironmentVariable("UNTURNED_BUNDLE_TOOL"), raw, rewritten);
+        Recompress(rewritten, target, BuildCompression.LZ4Runtime);
+        File.Delete(raw);
+        File.Delete(rewritten);
+        Debug.Log($"[convert] {input}: {new FileInfo(input).Length} to {new FileInfo(target).Length} bytes");
+    }
+
+    static void RunNode(params string[] arguments)
+    {
+        var start = new System.Diagnostics.ProcessStartInfo("node") { UseShellExecute = false, RedirectStandardOutput = true, RedirectStandardError = true };
+        foreach (var argument in arguments)
+            start.ArgumentList.Add(argument);
+        using var process = System.Diagnostics.Process.Start(start);
+        var error = process.StandardError.ReadToEndAsync();
+        Debug.Log($"[convert] {process.StandardOutput.ReadToEnd()}");
+        process.WaitForExit();
+        if (process.ExitCode != 0)
+            throw new InvalidDataException($"node {string.Join(" ", arguments)} failed: {error.Result}");
+    }
+
+    static void Recompress(string input, string target, BuildCompression compression)
+    {
+        var request = AssetBundle.RecompressAssetBundleAsync(input, target, compression);
         while (!request.isDone)
             System.Threading.Thread.Sleep(50);
         if (!request.success)
             throw new InvalidDataException($"Recompressing {input} failed: {request.result} {request.humanReadableResult}");
-        Debug.Log($"[convert] recompressed {input}: {new FileInfo(input).Length} to {new FileInfo(target).Length} bytes");
     }
 
     static Dictionary<string, string> ReadMaterialTextures(string directory)

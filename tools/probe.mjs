@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { serve } from "./serve.mjs";
@@ -20,7 +20,8 @@ for (let i = 0; i < 100 && !page; i++) {
 
 const socket = new WebSocket(page.webSocketDebuggerUrl);
 await new Promise((resolve) => { socket.onopen = resolve; });
-const logs = [];
+writeFileSync(logPath, "");
+const logs = { push: (line) => appendFileSync(logPath, `${line}\n`) };
 const pending = new Map();
 let nextId = 1;
 socket.onmessage = ({ data }) => {
@@ -45,7 +46,13 @@ function send(method, params = {}) {
 await send("Runtime.enable");
 await send("Page.enable");
 await send("Page.navigate", { url: `http://127.0.0.1:${server.address().port}/index.html` });
-await new Promise((resolve) => setTimeout(resolve, Number(seconds) * 1000));
+const started = Date.now();
+while (Date.now() - started < Number(seconds) * 1000) {
+  await new Promise((resolve) => setTimeout(resolve, 15000));
+  const before = Date.now();
+  const beat = await send("Runtime.evaluate", { expression: "document.getElementById('status').textContent", returnByValue: true });
+  logs.push(`[probe] t=${Math.round((Date.now() - started) / 1000)}s page answered in ${Date.now() - before} ms: ${beat?.result?.value ?? "no response"}`);
+}
 
 const state = await send("Runtime.evaluate", { expression: `document.getElementById("status").hidden + " | " + document.getElementById("status").textContent`, returnByValue: true });
 logs.push(`[probe] status hidden | text: ${state?.result?.value ?? "page did not respond"}`);
@@ -56,7 +63,6 @@ const gameLog = await send("Runtime.evaluate", {
 logs.push(`[probe] game log:\n${gameLog?.result?.value ?? "page did not respond"}`);
 const shot = await send("Page.captureScreenshot", { format: "png" });
 if (shot) writeFileSync(shotPath, Buffer.from(shot.data, "base64"));
-writeFileSync(logPath, logs.join("\n"));
 
 socket.close();
 browser.kill();

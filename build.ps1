@@ -111,9 +111,12 @@ function Build-Game([string]$method, [string]$logName, [switch]$StayOpen) {
 function Convert-Assets {
     $project = Join-Path $buildDir "unity"
     $log = Join-Path $buildDir "logs\convert.log"
+    robocopy (Join-Path $root "engine\unity\Assets") (Join-Path $project "Assets") /MIR /XF *.meta /NFL /NDL /NJH /NJS /NP | Out-Null
+    if ($LASTEXITCODE -ge 8) { throw "Copying the Unity project failed with exit code $LASTEXITCODE" }
     $env:UNTURNED_ASSETS = Join-Path $root "assets"
     $env:UNTURNED_CONVERTED = Join-Path $buildDir "converted"
     $env:UNTURNED_MAPS = $Maps -join ";"
+    $env:UNTURNED_BUNDLE_TOOL = Join-Path $root "tools\convert-bundle.mjs"
     Write-Host "== Convert assets (log: $log)"
     $process = Start-Process -FilePath $unity -Wait -PassThru -ArgumentList @(
         "-batchmode", "-quit",
@@ -188,6 +191,7 @@ switch ($Command) {
                 Build-Game "FullBuild.WaitForImport" "import" -StayOpen
             }
             Build-Game "FullBuild.BuildPlayer" "game"
+            Convert-Assets
         }
         Build-Package "game-player" (Join-Path $buildDir "game-dist") -FullData
     }

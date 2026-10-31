@@ -1,7 +1,10 @@
 [
+  { "file": "Runtime/Assembly-CSharp/Unturned/Bundles/Assets.cs", "find": "bundle.consolidateShaders = effectiveAssetBundleVersion < AssetBundleVersion.UNITY_2018_AND_2019_LTS", "replace": "bundle.consolidateShaders = true" },
   { "file": "Runtime/Assembly-CSharp/Unturned/Bundles/AssetsWorker.cs", "find": "ThreadPool.QueueUserWorkItem(SearcherThreadMain, state);", "replace": "SearcherThreadMain(state);" },
   { "file": "Runtime/Assembly-CSharp/Unturned/Bundles/AssetsWorker.cs", "find": "ThreadPool.QueueUserWorkItem(ReaderThreadMain, state);", "replace": "ReaderThreadMain(state);" },
-  { "file": "Runtime/Assembly-CSharp/Unturned/Bundles/AssetsWorker.cs", "find": "await hashStream.CopyToAsync(memoryStream);", "replace": "hashStream.CopyTo(memoryStream);" },
+  { "file": "Runtime/Assembly-CSharp/Unturned/Bundles/AssetsWorker.cs", "find": "await hashStream.CopyToAsync(memoryStream);", "replace": "hashStream.CopyTo(Stream.Null);" },
+  { "file": "Runtime/Assembly-CSharp/Unturned/Bundles/AssetsWorker.cs", "find": "data = memoryStream.ToArray();", "replace": "data = null;" },
+  { "file": "Runtime/Assembly-CSharp/Unturned/Bundles/MasterBundleConfig.cs", "find": "AssetBundle.LoadFromMemoryAsync(inputData)", "replace": "AssetBundle.LoadFromFileAsync(getAssetBundlePath())" },
   { "file": "Runtime/Assembly-CSharp/Unturned/Files/ResourceHash.cs", "find": "System.Threading.ThreadPool.QueueUserWorkItem(ThreadInitialize, state);", "replace": "ThreadInitialize(state);" },
   { "file": "Runtime/Assembly-CSharp/Unturned/Files/ResourceHash.cs", "find": "await hashStream.CopyToAsync(memoryStream);", "replace": "hashStream.CopyTo(memoryStream);" },
   { "file": "Runtime/Assembly-CSharp/Unturned/Provider/Provider.cs", "find": "System.Threading.ThreadPool.QueueUserWorkItem(WriteGameplayConfigOnWorkerThread, threadState);", "replace": "WriteGameplayConfigOnWorkerThread(threadState);" },
