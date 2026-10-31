@@ -44,7 +44,7 @@ export class Cursor {
   }
 }
 
-function decodeLz4(stored, size) {
+export function decodeLz4(stored, size) {
   const output = Buffer.alloc(size);
   let read = 0;
   let written = 0;
@@ -191,17 +191,18 @@ export function readSerializedFile(data) {
   const types = [];
   const typeCount = meta.i32();
   for (let i = 0; i < typeCount; i++) {
+    const rawStart = meta.position;
     const classId = meta.i32();
     meta.skip(1);
     const scriptIndex = meta.u16();
-    if (classId === 114) meta.skip(16);
+    if (classId === 114 || version >= 23) meta.skip(16);
     meta.skip(16);
     const tree = hasTypeTree ? readTypeTree(meta, version) : null;
     if (hasTypeTree) {
       const dependencies = meta.i32();
       meta.skip(dependencies * 4);
     }
-    types.push({ classId, scriptIndex, tree });
+    types.push({ classId, scriptIndex, tree, raw: data.subarray(rawStart, meta.position) });
   }
 
   const objects = [];
@@ -216,7 +217,19 @@ export function readSerializedFile(data) {
     objects.push({ pathId, offsetPosition: meta.position - 16, offset, size, typeIndex, classId: types[typeIndex].classId });
   }
 
-  return { version, bigEndian, metadataSize, fileSize, dataOffset, unityVersion, target, targetPosition, hasTypeTree, types, objects, littleEndian: !bigEndian };
+  const scriptCount = meta.i32();
+  meta.skip(scriptCount * 12);
+  const externals = [];
+  const externalCount = meta.i32();
+  for (let i = 0; i < externalCount; i++) {
+    meta.cstring();
+    const guid = data.subarray(meta.position, meta.position + 16);
+    meta.skip(16);
+    const type = meta.i32();
+    externals.push({ guid, type, path: meta.cstring() });
+  }
+
+  return { version, bigEndian, metadataSize, fileSize, dataOffset, unityVersion, target, targetPosition, hasTypeTree, types, objects, externals, littleEndian: !bigEndian };
 }
 
 export function readObject(node, data, position, littleEndian) {
@@ -247,8 +260,11 @@ function readValue(node, cursor) {
   } else if (node.name === "Array" || node.type === "Array") {
     value = readArray(node, cursor);
   } else {
-    value = { __start: cursor.position };
-    for (const child of node.children) value[child.name] = readValue(child, cursor);
+    value = { __start: cursor.position, __at: {} };
+    for (const child of node.children) {
+      value.__at[child.name] = cursor.position;
+      value[child.name] = readValue(child, cursor);
+    }
     value.__end = cursor.position;
   }
   if (node.align) cursor.align(4);
