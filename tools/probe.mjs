@@ -9,7 +9,10 @@ let nextClick = 0;
 const chrome = ["C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe", "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe"].find(existsSync);
 const server = await serve(root, 0);
 const profile = mkdtempSync(join(tmpdir(), "unturned-chrome-"));
-const browser = spawn(chrome, ["--headless=new", "--remote-debugging-port=0", "--use-angle=swiftshader", "--enable-unsafe-swiftshader", "--ignore-gpu-blocklist", "--window-size=1280,720", `--user-data-dir=${profile}`, "about:blank"], { stdio: "ignore" });
+const display = process.env.PROBE_REAL_GPU
+  ? ["--disable-renderer-backgrounding", "--disable-background-timer-throttling", "--disable-backgrounding-occluded-windows", "--no-first-run", "--no-default-browser-check"]
+  : ["--headless=new", "--use-angle=swiftshader", "--enable-unsafe-swiftshader", "--ignore-gpu-blocklist"];
+const browser = spawn(chrome, [...display, "--remote-debugging-port=0", "--window-size=1280,720", `--user-data-dir=${profile}`, "about:blank"], { stdio: "ignore" });
 
 let page;
 for (let i = 0; i < 100 && !page; i++) {
@@ -48,6 +51,21 @@ await send("Runtime.enable");
 await send("Page.enable");
 await send("Page.addScriptToEvaluateOnNewDocument", {
   source: `
+    window.measureFrames = (seconds) => {
+      const gl = document.createElement("canvas").getContext("webgl2");
+      const info = gl.getExtension("WEBGL_debug_renderer_info");
+      const renderer = info ? gl.getParameter(info.UNMASKED_RENDERER_WEBGL) : "unknown";
+      const times = [];
+      const start = performance.now();
+      const tick = (now) => {
+        times.push(now);
+        if (now - start < seconds * 1000) return requestAnimationFrame(tick);
+        const gaps = times.slice(1).map((time, index) => time - times[index]).sort((a, b) => a - b);
+        const canvas = document.getElementById("game");
+        console.log("[fps] " + JSON.stringify({ fps: +(1000 * (times.length - 1) / (times[times.length - 1] - times[0])).toFixed(1), medianMs: +gaps[gaps.length >> 1].toFixed(1), worstMs: +gaps[gaps.length - 1].toFixed(1), canvas: [canvas.width, canvas.height], renderer, visible: document.visibilityState }));
+      };
+      requestAnimationFrame(tick);
+    };
     window.audioStats = { decoded: 0, failed: 0, decodedSeconds: 0, started: 0, peak: 0 };
     const decode = BaseAudioContext.prototype.decodeAudioData;
     BaseAudioContext.prototype.decodeAudioData = function (...args) {

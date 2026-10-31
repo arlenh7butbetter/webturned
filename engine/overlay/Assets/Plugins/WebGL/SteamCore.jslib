@@ -74,4 +74,41 @@ mergeInto(LibraryManager.library, {
   SteamAPI_ISteamUtils_GetSteamUILanguage: function () { return steamString("english"); },
   SteamAPI_ISteamUtils_IsOverlayEnabled: function () { return 0; },
   SteamAPI_ISteamUtils_SetWarningMessageHook: function () {},
+
+  $steamCloudPath__deps: ["$UTF8ToString"],
+  $steamCloudPath: function (pointer) {
+    return "/game/SteamCloud/" + UTF8ToString(pointer).replace(/^\/+/, "");
+  },
+  SteamAPI_ISteamRemoteStorage_FileExists__deps: ["$steamCloudPath", "$FS"],
+  SteamAPI_ISteamRemoteStorage_FileExists: function (self, file) {
+    return FS.analyzePath(steamCloudPath(file)).exists ? 1 : 0;
+  },
+  SteamAPI_ISteamRemoteStorage_GetFileSize__deps: ["$steamCloudPath", "$FS"],
+  SteamAPI_ISteamRemoteStorage_GetFileSize: function (self, file) {
+    const path = steamCloudPath(file);
+    return FS.analyzePath(path).exists ? FS.stat(path).size : 0;
+  },
+  SteamAPI_ISteamRemoteStorage_FileRead__deps: ["$steamCloudPath", "$FS"],
+  SteamAPI_ISteamRemoteStorage_FileRead: function (self, file, data, size) {
+    const path = steamCloudPath(file);
+    if (!FS.analyzePath(path).exists) return 0;
+    const bytes = FS.readFile(path);
+    const count = Math.min(bytes.length, size);
+    HEAPU8.set(bytes.subarray(0, count), data);
+    return count;
+  },
+  SteamAPI_ISteamRemoteStorage_FileWrite__deps: ["$steamCloudPath", "$FS"],
+  SteamAPI_ISteamRemoteStorage_FileWrite: function (self, file, data, size) {
+    const path = steamCloudPath(file);
+    FS.createPath("/", path.slice(1, path.lastIndexOf("/")), true, true);
+    FS.writeFile(path, HEAPU8.subarray(data, data + size));
+    return 1;
+  },
+  SteamAPI_ISteamRemoteStorage_FileDelete__deps: ["$steamCloudPath", "$FS"],
+  SteamAPI_ISteamRemoteStorage_FileDelete: function (self, file) {
+    const path = steamCloudPath(file);
+    if (!FS.analyzePath(path).exists) return 0;
+    FS.unlink(path);
+    return 1;
+  },
 });
