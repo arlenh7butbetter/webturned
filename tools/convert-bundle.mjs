@@ -1,4 +1,4 @@
-import { closeSync, openSync, writeSync } from "node:fs";
+import { closeSync, openSync, readFileSync, writeSync } from "node:fs";
 import { readBundle, readObject, readSerializedFile } from "./unity-bundle.mjs";
 
 const WebGLTarget = 20;
@@ -7,7 +7,12 @@ const Texture2D = 28;
 const SerializedFileNode = 4;
 const zeroes = Buffer.alloc(16);
 
-const [input, output] = process.argv.slice(2);
+const AudioClip = 83;
+const DecompressOnLoad = 0;
+
+const args = process.argv.slice(2);
+const decodable = args[0] === "--decodable";
+const [input, output, audioBundlePath, audioManifestPath] = decodable ? args.slice(1) : args;
 const bundle = readBundle(input);
 const serializedNodes = bundle.nodes.filter((node) => node.flags & SerializedFileNode);
 const streams = bundle.nodes.find((node) => node.name.endsWith(".resS"));
@@ -77,7 +82,7 @@ function isLegacy(node) {
   return node.data.readUInt32BE(8) < 22;
 }
 
-if (serializedNodes.every(isLegacy)) {
+if (!decodable && serializedNodes.every(isLegacy)) {
   if (streams) throw new Error(`${input} streams textures from a serialized file version the converter can't inline`);
   serializedNodes.forEach(retargetLegacyFile);
   writeBundle(output, bundle.nodes.map((node) => ({ name: node.name, flags: node.flags, size: node.data.length, chunks: [node.data] })));
@@ -99,6 +104,66 @@ if (!DesktopTargets.has(file.target)) throw new Error(`Unexpected build target $
 if (file.bigEndian) throw new Error("Big-endian serialized files are not supported");
 
 const textureType = file.types.find((type) => type.classId === Texture2D);
+const audioType = file.types.find((type) => type.classId === AudioClip);
+
+function readClips(serialized, data, type) {
+  return serialized.objects.filter((object) => object.classId === AudioClip).map((object) => {
+    const { value } = readObject(type.tree, data, serialized.dataOffset + object.offset, true);
+    return value;
+  });
+}
+
+if (decodable) {
+  const clips = readClips(file, main.data, audioType);
+  for (const clip of clips) {
+    main.data.writeInt32LE(DecompressOnLoad, clip.__at.m_LoadType);
+    main.data[clip.__at.m_PreloadAudioData] = 1;
+    main.data[clip.__at.m_LoadInBackground] = 0;
+  }
+  writeBundle(output, bundle.nodes.map((node) => ({ name: node.name, flags: node.flags, size: node.data.length, chunks: [node.data] })));
+  console.log(`${input}: ${clips.length} audio clips made decodable`);
+  process.exit(0);
+}
+
+let replacementResource = null;
+let replacedClips = 0;
+
+function spliceAudio() {
+  const encodedBundle = readBundle(audioBundlePath);
+  const encodedMain = encodedBundle.nodes.find((node) => node.flags & SerializedFileNode);
+  replacementResource = encodedBundle.nodes.find((node) => node.name.endsWith(".resource")).data;
+  const encodedFile = readSerializedFile(encodedMain.data);
+  const encodedType = encodedFile.types.find((type) => type.classId === AudioClip);
+  const encoded = new Map(readClips(encodedFile, encodedMain.data, encodedType).map((clip) => [clip.m_Name, clip]));
+
+  const candidates = new Map();
+  for (const line of readFileSync(audioManifestPath, "utf8").split("\n").filter(Boolean)) {
+    const [id, name, channels, frequency, length] = line.split("\t");
+    const key = `${name}|${channels}|${frequency}`;
+    if (!candidates.has(key)) candidates.set(key, []);
+    candidates.get(key).push({ id, length: Number(length) });
+  }
+
+  for (const clip of readClips(file, main.data, audioType)) {
+    const options = candidates.get(`${clip.m_Name}|${clip.m_Channels}|${clip.m_Frequency}`) ?? [];
+    const match = options.find((option) => Math.abs(option.length - clip.m_Length) < 0.002);
+    if (!match) throw new Error(`No encoded audio for clip ${clip.m_Name} (${clip.m_Channels} channels, ${clip.m_Frequency} Hz, ${clip.m_Length} s)`);
+    const replacement = encoded.get(match.id);
+    if (!replacement) throw new Error(`Encoded audio bundle has no clip ${match.id}`);
+
+    main.data.writeInt32LE(replacement.m_LoadType, clip.__at.m_LoadType);
+    main.data.writeInt32LE(replacement.m_Channels, clip.__at.m_Channels);
+    main.data.writeInt32LE(replacement.m_Frequency, clip.__at.m_Frequency);
+    main.data.writeInt32LE(replacement.m_BitsPerSample, clip.__at.m_BitsPerSample);
+    main.data.writeFloatLE(replacement.m_Length, clip.__at.m_Length);
+    main.data.writeBigInt64LE(BigInt(replacement.m_Resource.m_Offset), clip.m_Resource.__at.m_Offset);
+    main.data.writeBigInt64LE(BigInt(replacement.m_Resource.m_Size), clip.m_Resource.__at.m_Size);
+    main.data.writeInt32LE(replacement.m_CompressionFormat, clip.__at.m_CompressionFormat);
+    replacedClips++;
+  }
+}
+
+if (audioBundlePath) spliceAudio();
 
 function inlineTexture(object) {
   const start = file.dataOffset + object.offset;
@@ -154,7 +219,10 @@ const serializedSize = file.dataOffset + position;
 head.writeBigInt64BE(BigInt(serializedSize), 24);
 
 const nodes = [{ name: main.name, flags: SerializedFileNode, size: serializedSize, chunks }];
-if (resource) nodes.push({ name: resource.name, flags: 0, size: resource.data.length, chunks: [resource.data] });
+if (resource) {
+  const data = replacementResource ?? resource.data;
+  nodes.push({ name: resource.name, flags: 0, size: data.length, chunks: [data] });
+}
 writeBundle(output, nodes);
 
 const result = readBundle(output);
@@ -182,4 +250,4 @@ for (const object of resultFile.objects) {
   }
 }
 
-console.log(`${input}: ${pieces.size} textures inlined, ${inlinedBytes} bytes, ${file.objects.length} objects verified`);
+console.log(`${input}: ${pieces.size} textures inlined, ${inlinedBytes} bytes, ${replacedClips} audio clips replaced, ${file.objects.length} objects verified`);

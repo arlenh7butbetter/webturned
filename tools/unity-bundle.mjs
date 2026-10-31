@@ -141,7 +141,8 @@ function readTypeTree(cursor, version) {
   const nodeCount = cursor.i32();
   const stringSize = cursor.i32();
   const start = cursor.position;
-  const strings = cursor.buffer.subarray(start + nodeCount * 32, start + nodeCount * 32 + stringSize);
+  const nodeSize = version >= 19 ? 32 : 24;
+  const strings = cursor.buffer.subarray(start + nodeCount * nodeSize, start + nodeCount * nodeSize + stringSize);
   const text = (value) => {
     if (value & 0x80000000) return commonStrings.get(value & 0x7fffffff) ?? `common:${value & 0x7fffffff}`;
     return strings.toString("utf8", value, strings.indexOf(0, value));
@@ -156,10 +157,10 @@ function readTypeTree(cursor, version) {
     const size = cursor.i32();
     cursor.skip(4);
     const metaFlags = cursor.i32();
-    cursor.skip(8);
+    cursor.skip(nodeSize - 24);
     flat.push({ level, type, name, size, align: (metaFlags & AlignAfter) !== 0, children: [] });
   }
-  cursor.position = version >= 23 ? blobEnd : start + nodeCount * 32 + stringSize;
+  cursor.position = version >= 23 ? blobEnd : start + nodeCount * nodeSize + stringSize;
   const stack = [];
   for (const node of flat) {
     stack.length = node.level;
@@ -173,14 +174,14 @@ export function readSerializedFile(data) {
   const head = new Cursor(data);
   head.skip(8);
   const version = head.u32();
-  head.skip(4);
-  if (version < 22) throw new Error(`Unsupported serialized file version ${version}`);
+  const legacyDataOffset = head.u32();
+  if (version < 15) throw new Error(`Unsupported serialized file version ${version}`);
   const bigEndian = head.u8() !== 0;
   head.skip(3);
-  const metadataSize = head.u32();
-  const fileSize = head.i64();
-  const dataOffset = head.i64();
-  head.skip(8);
+  const metadataSize = version >= 22 ? head.u32() : data.readUInt32BE(0);
+  const fileSize = version >= 22 ? head.i64() : data.readUInt32BE(4);
+  const dataOffset = version >= 22 ? head.i64() : legacyDataOffset;
+  if (version >= 22) head.skip(8);
 
   const meta = new Cursor(data, head.position, !bigEndian);
   const unityVersion = meta.cstring();
@@ -193,12 +194,12 @@ export function readSerializedFile(data) {
   for (let i = 0; i < typeCount; i++) {
     const rawStart = meta.position;
     const classId = meta.i32();
-    meta.skip(1);
-    const scriptIndex = meta.u16();
-    if (classId === 114 || version >= 23) meta.skip(16);
+    if (version >= 16) meta.skip(1);
+    const scriptIndex = version >= 17 ? meta.u16() : 0xffff;
+    if (classId === 114 || version >= 23 || (version < 17 && classId < 0)) meta.skip(16);
     meta.skip(16);
     const tree = hasTypeTree ? readTypeTree(meta, version) : null;
-    if (hasTypeTree) {
+    if (hasTypeTree && version >= 21) {
       const dependencies = meta.i32();
       meta.skip(dependencies * 4);
     }
@@ -211,11 +212,24 @@ export function readSerializedFile(data) {
     meta.align(4);
     const pathId = meta.buffer.readBigInt64LE(meta.position);
     meta.skip(8);
-    const offset = meta.i64();
+    const offsetPosition = meta.position;
+    const offset = version >= 22 ? meta.i64() : meta.u32();
     const size = meta.u32();
-    const typeIndex = meta.i32();
-    objects.push({ pathId, offsetPosition: meta.position - 16, offset, size, typeIndex, classId: types[typeIndex].classId });
+    const typeId = meta.i32();
+    let classId;
+    let typeIndex = typeId;
+    if (version < 16) {
+      classId = meta.u16();
+      typeIndex = types.findIndex((type) => type.classId === typeId);
+    } else {
+      classId = types[typeId].classId;
+    }
+    if (version < 17) meta.skip(2);
+    if (version === 15 || version === 16) meta.skip(1);
+    objects.push({ pathId, offsetPosition, offset, size, typeIndex, classId });
   }
+
+  if (version < 22) return { version, bigEndian, metadataSize, fileSize, dataOffset, unityVersion, target, targetPosition, hasTypeTree, types, objects, externals: [], littleEndian: !bigEndian };
 
   const scriptCount = meta.i32();
   meta.skip(scriptCount * 12);

@@ -46,6 +46,29 @@ function send(method, params = {}) {
 
 await send("Runtime.enable");
 await send("Page.enable");
+await send("Page.addScriptToEvaluateOnNewDocument", {
+  source: `
+    window.audioStats = { decoded: 0, failed: 0, decodedSeconds: 0, started: 0, peak: 0 };
+    const decode = BaseAudioContext.prototype.decodeAudioData;
+    BaseAudioContext.prototype.decodeAudioData = function (...args) {
+      const result = decode.apply(this, args);
+      if (result && result.then) result.then(
+        (buffer) => { audioStats.decoded++; audioStats.decodedSeconds += buffer.duration; },
+        () => { audioStats.failed++; }
+      );
+      return result;
+    };
+    const start = AudioBufferSourceNode.prototype.start;
+    AudioBufferSourceNode.prototype.start = function (...args) {
+      audioStats.started++;
+      if (this.buffer) {
+        const samples = this.buffer.getChannelData(0);
+        for (let i = 0; i < samples.length; i += 64) audioStats.peak = Math.max(audioStats.peak, Math.abs(samples[i]));
+      }
+      return start.apply(this, args);
+    };
+  `,
+});
 await send("Page.navigate", { url: `http://127.0.0.1:${server.address().port}/index.html` });
 const clicks = (clickSpec ?? "").split(";").filter(Boolean).map((spec) => {
   const [action, at] = spec.split("@");
@@ -98,6 +121,8 @@ while (Date.now() - started < Number(seconds) * 1000) {
   logs.push(`[probe] t=${Math.round((Date.now() - started) / 1000)}s page answered in ${Date.now() - before} ms: ${beat?.result?.value ?? "no response"}`);
 }
 
+const audio = await send("Runtime.evaluate", { expression: "JSON.stringify(window.audioStats)", returnByValue: true });
+logs.push(`[probe] audio ${audio?.result?.value ?? "no response"}`);
 const state = await send("Runtime.evaluate", { expression: `document.getElementById("status").hidden + " | " + document.getElementById("status").textContent`, returnByValue: true });
 logs.push(`[probe] status hidden | text: ${state?.result?.value ?? "page did not respond"}`);
 const gameLog = await send("Runtime.evaluate", {
