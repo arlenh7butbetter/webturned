@@ -1,4 +1,5 @@
 [
+  { "file": "Runtime/Assembly-CSharp/CustomPostProcess/SkyFog.cs", "find": "context.command.BlitFullscreenTriangle(context.source, context.destination, sheet, 0);", "replace": "context.command.BlitFullscreenTriangle(context.source, context.destination, sheet, 0, preserveDepth: true);" },
   { "file": "Runtime/Assembly-CSharp/Unturned/Provider/Provider.cs", "find": "wasQuitGameCalled = true;\n\t\t\tApplication.Quit();", "replace": "wasQuitGameCalled = true;\n\t\t\tBrowserPage.BrowserPage_Reload();" },
   { "file": "Runtime/Assembly-CSharp/Unturned/Settings/GraphicsSettings.cs", "find": "public static void applyResolution()\n\t\t{", "replace": "public static void applyResolution()\n\t\t{\n\t\t\tif (UnityEngine.Application.platform == UnityEngine.RuntimePlatform.WebGLPlayer) return;" },
   { "file": "Runtime/Assembly-CSharp/Unturned/UI/Menu/MenuDashboardUI.cs", "find": "#if !UNITY_64\n\t\t\tISleekBox architectureBox", "replace": "#if !UNITY_64 && !UNITY_WEBGL\n\t\t\tISleekBox architectureBox" },

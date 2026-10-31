@@ -49,6 +49,7 @@ await send("Page.enable");
 await send("Page.navigate", { url: `http://127.0.0.1:${server.address().port}/index.html` });
 const clicks = (clickSpec ?? "").split(";").filter(Boolean).map((spec) => {
   const [action, at] = spec.split("@");
+  if (action.startsWith("js:")) return { expression: action.slice(3), at: Number(at) };
   if (action.startsWith("key:")) {
     const [, code, key, virtualCode, hold] = action.split(":");
     return { keyPress: { code, key, windowsVirtualKeyCode: Number(virtualCode) }, hold: Number(hold), at: Number(at) };
@@ -57,7 +58,15 @@ const clicks = (clickSpec ?? "").split(";").filter(Boolean).map((spec) => {
   return { x, y, at: Number(at) };
 });
 
-async function click({ x, y, keyPress, hold }, index) {
+async function click({ x, y, keyPress, hold, expression }, index) {
+  if (expression) {
+    await send("Runtime.evaluate", { expression });
+    logs.push(`[probe] evaluated ${expression}`);
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+    const evalShot = await send("Page.captureScreenshot", { format: "png" });
+    if (evalShot) writeFileSync(shotPath.replace(/\.png$/, `-${index}.png`), Buffer.from(evalShot.data, "base64"));
+    return;
+  }
   if (keyPress) {
     await send("Input.dispatchKeyEvent", { type: "keyDown", ...keyPress });
     await new Promise((resolve) => setTimeout(resolve, hold * 1000));
