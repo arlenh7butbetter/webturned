@@ -161,6 +161,7 @@ function Build-Package([string]$playerName, [string]$output, [switch]$FullData) 
         robocopy (Join-Path $root "assets\Bundles") $bundles /MIR /XF core.masterbundle /NFL /NDL /NJH /NJS /NP | Out-Null
         if ($LASTEXITCODE -ge 8) { throw "Copying bundles failed with exit code $LASTEXITCODE" }
         Copy-Item (Join-Path $buildDir "converted\Bundles\core.masterbundle") $bundles
+        Invoke-Checked "Menu scene" { node --max-old-space-size=4096 (Join-Path $root "tools\convert-scene.mjs") (Join-Path $root "assets\Unturned_Data") (Join-Path $buildDir "converted\Bundles\core.masterbundle") level8 (Join-Path $bundles "Menu_Base.bundle") }
         $groups += "game=$bundles@game/Bundles"
         $rootFiles = Join-Path $buildDir "package\root"
         Remove-Item $rootFiles -Recurse -Force -ErrorAction SilentlyContinue
