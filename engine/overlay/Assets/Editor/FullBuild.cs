@@ -9,6 +9,8 @@ using UnityEngine.Rendering;
 
 public static class FullBuild
 {
+    static readonly string[] BuiltInBundleShaders = { "Mobile/Particles/Additive", "Particles/Standard Surface", "Particles/Standard Unlit", "Unlit/Texture" };
+
     public static void CompilePlayer()
     {
         var output = Environment.GetEnvironmentVariable("UNTURNED_PLAYER_SCRIPTS");
@@ -40,10 +42,33 @@ public static class FullBuild
         };
     }
 
+    static void IncludeBundleShaders()
+    {
+        var shaders = AssetDatabase.FindAssets("t:Shader", new[] { "Assets" })
+            .Select(guid => AssetDatabase.LoadAssetAtPath<Shader>(AssetDatabase.GUIDToAssetPath(guid)))
+            .Concat(BuiltInBundleShaders.Select(Shader.Find))
+            .ToArray();
+        if (shaders.Contains(null))
+            throw new InvalidOperationException("A shader required by core.masterbundle is missing");
+
+        var settings = new SerializedObject(AssetDatabase.LoadAssetAtPath<UnityEngine.Object>("ProjectSettings/GraphicsSettings.asset"));
+        var included = settings.FindProperty("m_AlwaysIncludedShaders");
+        var existing = Enumerable.Range(0, included.arraySize).Select(i => included.GetArrayElementAtIndex(i).objectReferenceValue).ToHashSet();
+        foreach (var shader in shaders.Where(shader => !existing.Contains(shader)))
+        {
+            included.InsertArrayElementAtIndex(included.arraySize);
+            included.GetArrayElementAtIndex(included.arraySize - 1).objectReferenceValue = shader;
+        }
+        settings.ApplyModifiedPropertiesWithoutUndo();
+        Debug.Log($"[full] always included shaders: {included.arraySize}");
+    }
+
     public static void BuildPlayer()
     {
         if (AssetDatabase.LoadAssetAtPath<UnityEngine.Object>("Assets/TextMesh Pro/Resources/TMP Settings.asset") == null)
             throw new InvalidOperationException("TMP Essential Resources are not imported");
+
+        IncludeBundleShaders();
 
         PlayerSettings.SetUseDefaultGraphicsAPIs(BuildTarget.WebGL, false);
         PlayerSettings.SetGraphicsAPIs(BuildTarget.WebGL, new[] { GraphicsDeviceType.OpenGLES3 });

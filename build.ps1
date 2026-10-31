@@ -1,5 +1,5 @@
 param(
-    [ValidateSet("build", "clean", "test", "run", "compile", "game")]
+    [ValidateSet("build", "clean", "test", "run", "compile", "slice")]
     [string]$Command = "build",
     [string[]]$Maps = @("PEI"),
     [int]$Port = 8080,
@@ -185,7 +185,7 @@ switch ($Command) {
     "compile" {
         Build-Game "FullBuild.CompilePlayer" "compile"
     }
-    "game" {
+    "build" {
         if (-not $PackageOnly) {
             if (-not (Test-Path (Join-Path $buildDir "full\Assets\TextMesh Pro\Resources\TMP Settings.asset"))) {
                 Build-Game "FullBuild.WaitForImport" "import" -StayOpen
@@ -193,18 +193,18 @@ switch ($Command) {
             Build-Game "FullBuild.BuildPlayer" "game"
             Convert-Assets
         }
-        Build-Package "game-player" (Join-Path $buildDir "game-dist") -FullData
+        Build-Package "game-player" $dist -FullData
     }
-    "build" {
+    "slice" {
         if (-not $PackageOnly) {
             Build-Player
             Convert-Assets
         }
-        Build-Package "player" $dist
+        Build-Package "player" (Join-Path $buildDir "slice-dist")
     }
     "test" {
         Invoke-Checked "Package tests" { node --test (Join-Path $root "tests\package.test.mjs") }
-        Invoke-Checked "Browser test" { node (Join-Path $root "tests\browser.mjs") $dist }
+        Invoke-Checked "Browser test" { node (Join-Path $root "tests\browser.mjs") (Join-Path $buildDir "slice-dist") }
     }
     "run" {
         Invoke-Checked "Server" { node (Join-Path $root "tools\serve.mjs") $dist $Port }

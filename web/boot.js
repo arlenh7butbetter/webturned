@@ -14,7 +14,7 @@ async function boot() {
   const wanted = [...pkg.entries.values()].filter((entry) => entry.group === "game" || entry.group === `map/${map}`);
   if (!wanted.some((entry) => entry.group === `map/${map}`)) throw new Error(`Package has no map named ${map}`);
   statusLine.textContent = "Downloading game data";
-  await pkg.preload([...pkg.entries.values()]);
+  await pkg.preload(wanted);
   for (const [index, entry] of wanted.entries()) {
     statusLine.textContent = `Loading game data ${index + 1}/${wanted.length}`;
     unturnedFiles.push({ path: `/${entry.path}`, data: await pkg.read(entry.path) });

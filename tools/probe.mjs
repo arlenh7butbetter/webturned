@@ -4,7 +4,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { serve } from "./serve.mjs";
 
-const [root, seconds, logPath, shotPath] = process.argv.slice(2);
+const [root, seconds, logPath, shotPath, clickSpec] = process.argv.slice(2);
+let nextClick = 0;
 const chrome = ["C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe", "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe"].find(existsSync);
 const server = await serve(root, 0);
 const profile = mkdtempSync(join(tmpdir(), "unturned-chrome-"));
@@ -46,9 +47,30 @@ function send(method, params = {}) {
 await send("Runtime.enable");
 await send("Page.enable");
 await send("Page.navigate", { url: `http://127.0.0.1:${server.address().port}/index.html` });
+const clicks = (clickSpec ?? "").split(";").filter(Boolean).map((spec) => {
+  const [position, at] = spec.split("@");
+  const [x, y] = position.split(",").map(Number);
+  return { x, y, at: Number(at) };
+});
+
+async function click({ x, y }, index) {
+  await send("Input.dispatchMouseEvent", { type: "mouseMoved", x, y });
+  await new Promise((resolve) => setTimeout(resolve, 500));
+  await send("Input.dispatchMouseEvent", { type: "mousePressed", x, y, button: "left", clickCount: 1 });
+  await new Promise((resolve) => setTimeout(resolve, 200));
+  await send("Input.dispatchMouseEvent", { type: "mouseReleased", x, y, button: "left", clickCount: 1 });
+  logs.push(`[probe] clicked ${x},${y}`);
+  await new Promise((resolve) => setTimeout(resolve, 4000));
+  const shot = await send("Page.captureScreenshot", { format: "png" });
+  if (shot) writeFileSync(shotPath.replace(/\.png$/, `-${index}.png`), Buffer.from(shot.data, "base64"));
+}
+
 const started = Date.now();
 while (Date.now() - started < Number(seconds) * 1000) {
-  await new Promise((resolve) => setTimeout(resolve, 15000));
+  await new Promise((resolve) => setTimeout(resolve, 5000));
+  while (clicks.length && clicks[0].at * 1000 <= Date.now() - started) {
+    await click(clicks.shift(), nextClick++);
+  }
   const before = Date.now();
   const beat = await send("Runtime.evaluate", { expression: "document.getElementById('status').textContent", returnByValue: true });
   logs.push(`[probe] t=${Math.round((Date.now() - started) / 1000)}s page answered in ${Date.now() - before} ms: ${beat?.result?.value ?? "no response"}`);

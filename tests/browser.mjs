@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { serve } from "../tools/serve.mjs";
 
 const dist = process.argv[2];
-const screenshotDir = process.argv[3] ?? join(dist, "..", "build", "logs");
+const screenshotDir = process.argv[3] ?? join(dist, "..", "logs");
 const chrome = ["C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe", "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe"].find(existsSync);
 if (!chrome) throw new Error("Chrome or Edge is required");
 
