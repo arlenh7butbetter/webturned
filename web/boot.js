@@ -62,6 +62,7 @@ async function boot() {
     companyName: "unturned-web-port",
     productName: "Webturned",
     productVersion: pkg.build,
+    devicePixelRatio: 1,
     unturnedFiles: unturnedFiles.concat(mapFiles),
     mapStates: map ? { [map]: 1 } : {},
     loadedMapFiles: mapFiles.map((file) => file.path),
