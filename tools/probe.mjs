@@ -10,7 +10,7 @@ const chrome = ["C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe", "C
 const server = await serve(root, 0);
 const profile = mkdtempSync(join(tmpdir(), "unturned-chrome-"));
 const display = process.env.PROBE_REAL_GPU
-  ? ["--disable-renderer-backgrounding", "--disable-background-timer-throttling", "--disable-backgrounding-occluded-windows", "--no-first-run", "--no-default-browser-check"]
+  ? ["--headless=new", "--use-angle=d3d11", "--enable-gpu", "--ignore-gpu-blocklist"]
   : ["--headless=new", "--use-angle=swiftshader", "--enable-unsafe-swiftshader", "--ignore-gpu-blocklist"];
 const browser = spawn(chrome, [...display, "--remote-debugging-port=0", `--window-size=${process.env.PROBE_WINDOW ?? "1280,720"}`, `--user-data-dir=${profile}`, "about:blank"], { stdio: "ignore" });
 
