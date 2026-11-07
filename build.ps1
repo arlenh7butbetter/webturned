@@ -82,6 +82,7 @@ function Build-Game([string]$method, [string]$logName, [switch]$StayOpen) {
     foreach ($patch in $patches) {
         $file = Join-Path $project "Assets\$($patch.file)"
         $text = [IO.File]::ReadAllText($file)
+        if ($patch.replace.Contains($patch.find) -and $text.Contains($patch.replace)) { continue }
         if ($text.Contains($patch.find)) {
             [IO.File]::WriteAllText($file, $text.Replace($patch.find, $patch.replace))
         } elseif (-not $text.Contains($patch.replace)) {
