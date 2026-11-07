@@ -1,6 +1,13 @@
 const canvas = document.getElementById("game");
 const statusLine = document.getElementById("status");
 
+const NativeAudioContext = window.AudioContext;
+window.AudioContext = class extends NativeAudioContext {
+  constructor(options) {
+    super({ ...options, sampleRate: 24000 });
+  }
+};
+
 const requestPointerLock = canvas.requestPointerLock;
 canvas.requestPointerLock = function (options) {
   return requestPointerLock.call(this, options)?.catch((error) => console.warn(`Pointer lock was not granted: ${error.message}`));
