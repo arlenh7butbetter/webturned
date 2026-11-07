@@ -77,6 +77,7 @@ public static class FullBuild
         PlayerSettings.WebGL.nameFilesAsHashes = false;
         PlayerSettings.WebGL.dataCaching = false;
         PlayerSettings.WebGL.exceptionSupport = WebGLExceptionSupport.FullWithStacktrace;
+        PlayerSettings.WebGL.maximumMemorySize = 4096;
         PlayerSettings.stripEngineCode = false;
         PlayerSettings.SetManagedStrippingLevel(NamedBuildTarget.WebGL, ManagedStrippingLevel.Minimal);
         PlayerSettings.WebGL.template = "APPLICATION:Minimal";
