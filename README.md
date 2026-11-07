@@ -2,7 +2,7 @@
 
 Unturned running in a browser, ported by Arlen. Not a remake: this compiles the game's real C# from the U3 SDK to WebAssembly with Unity's WebGL build, then feeds it the real game files from a Steam install.
 
-It's an experiment and it's rough, but it does work. You can get through the menu, load into PEI and walk around. Most of what's left is finding out what breaks next.
+It's still rough in places, but it works. All ten official maps are in, and you can drive, shoot zombies and get eaten by them. Most of what's left is finding out what breaks next.
 
 This is a fan project. It isn't affiliated with or endorsed by Smartly Dressed Games. "Unturned" is only used here to say what the project is based on.
 
@@ -11,8 +11,9 @@ This is a fan project. It isn't affiliated with or endorsed by Smartly Dressed G
 Working:
 
 - The real main menu and loading screens
-- Loading into PEI in singleplayer
-- Walking, terrain, trees, buildings and water
+- All ten official maps in singleplayer, including the tutorial. Each map downloads when you pick it
+- Walking, terrain, trees, grass, buildings and water
+- Zombies, guns and vehicles
 - The inventory screen
 - Sound, including the ambient loops
 - Saving, into the browser's own storage, so clearing site data deletes your worlds
@@ -20,8 +21,8 @@ Working:
 
 Not working yet, or not tested:
 
-- **Zombies, combat, picking up items, crafting and vehicles** haven't been tested yet.
-- **Only PEI is packaged.** The other maps need their bundles converted and on-demand loading.
+- **Zombies don't pathfind.** The SDK doesn't include the pathfinding library the real game uses, so they walk straight at you and can get stuck on walls.
+- **Picking up items, crafting and respawning** haven't been tested yet.
 - **Steam stuff** is faked offline, so Workshop, the item store and matchmaking don't do anything.
 - **Multiplayer** doesn't exist yet. The plan is browser-hosted games over WebRTC, once singleplayer is solid.
 - **Water** is a flat gray for now. It's using the SDK's fallback shader.
@@ -93,7 +94,7 @@ If you're poking around, those three are where most of the interesting stuff is.
 
 ## Hosting it yourself
 
-The package is big, around 400 MB, so you'll probably want it on a CDN. Set this in `index.html` before `runtime.js` loads:
+The package is big, around 1.5 GB with every map, so you'll probably want it on a CDN. Players only download about 400 MB to get to the menu, plus whichever map they play. Set this in `index.html` before `runtime.js` loads:
 
 ```html
 <script>window.unturnedPackageUrl = "https://your-cdn.example/game.unturned";</script>

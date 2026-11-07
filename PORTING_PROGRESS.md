@@ -1,6 +1,6 @@
 # Porting Progress
 
-Last updated 2026-11-06. Everything under "Verified" was run and checked, using headless Chrome with software rendering unless stated otherwise. **The original game runs in a browser and you can walk around PEI. It isn't complete.**
+Last updated 2026-11-07. Everything under "Verified" was run and checked in headless Chrome, either with software rendering or on the real GPU (RTX 4060 Laptop through ANGLE/D3D11) as stated. **All 10 official maps load in the browser and the core survival loop works. It isn't complete.**
 
 ## Verified
 
@@ -15,6 +15,13 @@ Last updated 2026-11-06. Everything under "Verified" was run and checked, using 
 | Real barn main menu | Screenshot, log shows 258 menu renderers |
 | Main menu frame rate on a real GPU | RTX 4060 Laptop, 1925x1105 canvas: 144 FPS (display limit), about 2-3 ms of game work per frame, 239 draw calls |
 | Singleplayer on PEI loads | Game log, screenshots of terrain, trees, buildings, water, wheat fields, bridge |
+| All 10 maps listed, loaded when picked | Map list screenshot with names and previews before any map is downloaded; PEI, Tutorial (from its own button) and Germany loaded and rendered on the real GPU |
+| In-game frame rate on a real GPU | PEI, Tutorial and Germany at 144 FPS (display limit), 2-5 ms of game work per frame |
+| Grass and foliage | 17-23 instanced foliage draws per frame in PEI, no foliage errors |
+| Zombies | 27 to 60 spawn when entering a navigation zone, attack and kill the player |
+| Guns | Maplestrike given by command auto-equips, fires (30 to 24 rounds), kills zombies (27 to 25 alive) |
+| Vehicles | Explorer spawned, entered with F, driven about 100 m, exited with F |
+| Startup download | 392 MB (player and game data), then 12 MB (Tutorial) to 423 MB (Russia) per map |
 | Walking and terrain collision | Position logged moving about 10 m uphill while W was held |
 | Water draws behind terrain | Screenshots, after keeping depth through `SkyFog` |
 | Inventory dashboard opens with Tab | Screenshot shows inventory, character preview and item with condition |
@@ -28,23 +35,22 @@ Last updated 2026-11-06. Everything under "Verified" was run and checked, using 
 
 - **Hearing it.** Decoding and playback are measured, but nobody has confirmed how it sounds.
 - **Mouse look.** The test browsers reject pointer lock, so it needs a normal browser window.
-- **In-game performance on a real GPU.** Only the main menu has been measured.
+- **Russia and the other maps.** They're converted and packaged, but only PEI, Tutorial and Germany have been loaded.
 - **Resuming a save in place.** The files persist, but loading back at the same position hasn't been checked.
-- **Zombies, combat, picking up items, crafting, vehicles.** No test has exercised them yet.
+- **Picking up items from the ground, crafting, death and respawn.** Not exercised yet.
 - **In-game Exit back to the menu.** Only quitting from the main menu has been tested.
 - **The `BundleTool` patch.** This editor menu tool compiles but has not been run.
 
 ## Known problems
 
-- **Only PEI is packaged.** Other maps need converting and on-demand loading, since they total about 1.4 GB.
-- **Foliage thread.** `FoliageStorageV2` still starts a `Thread`, so grass and foliage may be missing.
+- **Zombies don't pathfind.** The SDK leaves out the A* Pathfinding Project integration, so zombies use the SDK's `NonPathfindingZombieMovementComponent` and walk straight at their target. They can get stuck on walls.
 - **Water is flat gray.** It uses the SDK's `Water_Fallback` shader.
 - **Menu visual glitch.** Bright patches at the left and bottom-left of the barn menu. The barn itself is no longer overexposed, but these haven't been checked against the original game.
 - **Intermittent freeze on a real GPU.** Before the menu fix, the page stopped responding a few times after 20 seconds to 2.5 minutes. It hasn't been reproduced since, but the runs have been short.
 - **Steam is simulated offline.** About 55 of 956 native functions are implemented. The rest log their name and return zero, and callbacks never fire, so inventory items, Workshop and matchmaking don't work.
 - **Online requests fail.** Live config, news and matchmaking filters fail in the browser, and the game logs and retries them.
 - **Duplicate sounds.** Clips with the same name, channels, frequency and length share one encoded copy.
-- **Package size.** `game.unturned` is about 397 MB for one map.
+- **Package size.** `game.unturned` is about 1.5 GB with every map. Players only download the part they need.
 - **Plugin modules are unsupported.** `Assembly.Load` can't work under IL2CPP.
 
 ## Decisions
@@ -59,6 +65,9 @@ Last updated 2026-11-06. Everything under "Verified" was run and checked, using 
 - **Worker thread pool jobs run on the main thread.** They finish on their own, and WebGL has no threads. This can block the page for a few seconds while loading.
 - **Quit reloads the page**, because shutting the engine down left its main loop running on freed memory.
 - **Patch rules must not stack.** `build/full` is reused between builds, so a rule whose replacement contains its own search text is skipped once applied. Before this, the menu props were loaded once per build. After 9 builds the barn was drawn 9 times with 54 lights, 8,205 draw calls a frame, about 24 FPS and blown-out lighting.
+- **Maps load on demand.** Each map's listing files ship with the game data, so the menu shows every map. `Provider.singleplayer` waits for the map's package group to download before starting, and the previous map's files are freed. Package groups are stored contiguously so each is one range request.
+- **Foliage runs on the main thread.** `FoliageStorageV2` reads one requested tile per frame in `Update` instead of on a worker thread, and `ListExtension` reads `List<T>._items` by reflection because IL2CPP can't run `Reflection.Emit`.
+- **4 GB WebGL memory limit.** Germany ran out of the default 2 GB while loading.
 - **Saves use IndexedDB.** `/game/Worlds`, `/game/Cloud` and `/game/SteamCloud` are mounted with IDBFS and synced every 20 seconds, on page hide and before Quit reloads.
 
 ## Licensing
@@ -68,8 +77,7 @@ The repo is private as of 2026-10-31. `src/` and `assets/` stay out of Git regar
 ## Next steps
 
 1. Check that a saved game resumes at the same position.
-2. Test zombies, combat, items and crafting, then fix what breaks.
-3. Replace the foliage thread.
-4. Convert the other 9 maps and load them on demand.
-5. Replace `Water_Fallback` with real water if the shipped shaders can be recovered.
-6. After singleplayer is solid, add the WebRTC transport.
+2. Test item pickup, crafting, death and respawn, then fix what breaks.
+3. Load the remaining maps, Russia first since it's the largest.
+4. Replace `Water_Fallback` with real water if the shipped shaders can be recovered.
+5. After singleplayer is solid, add the WebRTC transport.
