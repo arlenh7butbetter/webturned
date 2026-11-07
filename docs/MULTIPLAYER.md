@@ -1,6 +1,6 @@
 # Multiplayer design
 
-Status: planned, not built yet.
+Status: built. Hosting, joining, loading into the host's world and position sync were checked with two headless browsers. Walking sync, combat between players and voice chat haven't been tested.
 
 ## Goal
 
@@ -35,17 +35,25 @@ The WebRTC versions live in `engine/overlay`, with a `.jslib` bridge. Each peer 
 Steam is simulated offline, so:
 
 - Each browser gets a random, persistent Steam ID and a player name, stored in the browser.
-- `BeginAuthSession` accepts tickets and fires `ValidateAuthTicketResponse_t` with `k_EAuthSessionResponseOK`, so the server's normal join path admits the player.
+- The host runs with `Dedicator.offlineOnly`, Unturned's existing mode for offline LAN servers, which skips Steam authentication.
+- The client still sends a small placeholder auth ticket, because the join flow expects one.
+
+## Listen server changes
+
+Unturned never shipped listen servers, so a few places assumed that a non-dedicated server has no remote clients:
+
+- Client RPCs were always invoked locally. Now only the loopback connection is.
+- Region data (items, barricades, structures, resources and objects) and player positions were only sent by dedicated servers. Now a host sends them to remote players, but not to its own loopback client.
+- The host's own player was told about new players, and remote players were spawned from the client prefab without a `CharacterController`.
+- Asset integrity hashes were compared without the masterbundle hash on non-dedicated servers, while clients included it.
+- `ReadWrite.readData` hashes `Assembly-CSharp.dll`, which doesn't exist in a WebAssembly build, so it returns an empty hash like the resource hash does when it can't be computed.
 
 ## Joining
 
 The joining player enters the room code, connects, and receives the host's map name. The client downloads that map through the existing on-demand map loading before it loads the level.
 
-## Build order
+## Still to do
 
-1. Signaling server and a JavaScript peer layer, tested with two headless browsers.
-2. C# client and server transports, with the `.jslib` bridge.
-3. Steam identity and authentication stubs.
-4. Host mode: start a hosted game from the menu and show the room code.
-5. Join flow and map download on the client.
-6. Two-browser test: both players see each other move, shoot and take damage.
+- Test a real play session: walking, shooting each other, vehicles, items and building.
+- Voice chat: Steam's voice encoder doesn't exist in the browser, so voice is silent.
+- A TURN relay for networks that block direct connections.

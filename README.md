@@ -24,7 +24,7 @@ Not working yet, or not tested:
 - **Zombies don't pathfind.** The SDK doesn't include the pathfinding library the real game uses, so they walk straight at you and can get stuck on walls.
 - **Picking up items, crafting and respawning** haven't been tested yet.
 - **Steam stuff** is faked offline, so Workshop, the item store and matchmaking don't do anything.
-- **Multiplayer** doesn't exist yet. The plan is browser-hosted games over WebRTC, once singleplayer is solid.
+- **Multiplayer** is new. Joining a friend's game works, but it hasn't had a proper play session yet, and voice chat is silent.
 - **Water** is a flat gray for now. It's using the SDK's fallback shader.
 - **Mouse look** still needs a proper test in a normal browser window.
 
@@ -70,6 +70,7 @@ Open <http://localhost:8080/> and give it a minute. The first build takes a whil
 | `test` | Runs the package tests and the browser test |
 | `slice` | Builds the small terrain test scene that `test` uses |
 | `compile` | Only checks that the game's code compiles for WebGL |
+| `signal` | Runs the multiplayer signaling server (use `-Port 8787` next to `run`) |
 | `clean` | Deletes `build/` and `dist/` |
 
 Run `slice` once before `test`. Adding `-PackageOnly` to `build` or `slice` skips Unity and just repackages, which is handy when you've only changed something in `web/`.
@@ -101,6 +102,20 @@ The package is big, around 1.5 GB with every map, so you'll probably want it on 
 ```
 
 The page has to be on HTTPS, and your CDN needs CORS set up to allow your site's origin and the `Range` header.
+
+## Playing with friends
+
+One player hosts from their own browser and the others join it. Game traffic goes straight between browsers over WebRTC, so there's no game server. The browsers do need a small signaling server to find each other, which is `networking/signal.mjs`. It's plain Node with no dependencies and it never sees game traffic, so it runs fine on a free host like Render or Fly. It holds long-lived connections, so serverless platforms like Vercel won't work for it.
+
+Point the page at it in `index.html`:
+
+```html
+<script>window.unturnedSignalUrl = "https://your-signal-server.example";</script>
+```
+
+Then the host turns on **Host for Friends** in the singleplayer menu and starts a game. The room code shows up in chat. Friends go to Play > Connect, type the code into the host box and press Connect.
+
+Some networks, mostly school and office ones, block direct browser-to-browser connections. Those players would need a TURN relay, which can be added with `window.unturnedIceServers`.
 
 Before you put a build online, though, read the next section.
 

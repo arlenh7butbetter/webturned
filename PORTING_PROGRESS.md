@@ -22,6 +22,7 @@ Last updated 2026-11-07. Everything under "Verified" was run and checked in head
 | Guns | Maplestrike given by command auto-equips, fires (30 to 24 rounds), kills zombies (27 to 25 alive) |
 | Vehicles | Explorer spawned, entered with F, driven about 100 m, exited with F |
 | Startup download | About 320 MB (player and game data), then 12 MB (Tutorial) to 423 MB (Russia) per map |
+| Multiplayer join over WebRTC | Two headless browsers with a local signaling server: the host shows a room code, the friend joins through Play > Connect, loads PEI fully, and both see each other's positions |
 | Browser memory | Chrome's total private memory, real GPU: 2.2 GB at the menu (was 4.1 GB) and 3.1 GB in PEI (was 5.2 GB) |
 | Walking and terrain collision | Position logged moving about 10 m uphill while W was held |
 | Water draws behind terrain | Screenshots, after keeping depth through `SkyFog` |
@@ -83,6 +84,6 @@ The repo is private as of 2026-10-31. `src/` and `assets/` stay out of Git regar
 1. Check that a saved game resumes at the same position.
 2. Test item pickup, crafting, death and respawn, then fix what breaks.
 3. Load the remaining maps, Russia first since it's the largest.
-4. Build browser-hosted multiplayer as described in `docs/MULTIPLAYER.md`.
+4. Play-test multiplayer properly (walking, shooting each other, vehicles, building) and deploy a signaling server. See `docs/MULTIPLAYER.md`.
 5. Load assets on demand to bring memory down further.
 6. Replace `Water_Fallback` with real water if the shipped shaders can be recovered.
