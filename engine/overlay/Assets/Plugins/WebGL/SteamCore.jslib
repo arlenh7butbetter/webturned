@@ -16,8 +16,11 @@ mergeInto(LibraryManager.library, {
   SteamAPI_RunCallbacks: function () {},
   SteamAPI_GetHSteamPipe: function () { return 1; },
   SteamAPI_GetHSteamUser: function () { return 1; },
+  SteamGameServer_GetHSteamPipe: function () { return 2; },
+  SteamGameServer_GetHSteamUser: function () { return 2; },
   SteamInternal_CreateInterface: function () { return 1; },
   SteamInternal_FindOrCreateUserInterface: function () { return 1; },
+  SteamInternal_FindOrCreateGameServerInterface: function () { return 1; },
   SteamAPI_ManualDispatch_Init: function () {},
   SteamAPI_ManualDispatch_RunFrame: function () {},
   SteamAPI_ManualDispatch_GetNextCallback: function () { return 0; },
@@ -62,11 +65,17 @@ mergeInto(LibraryManager.library, {
   SteamAPI_ISteamApps_BIsSubscribed: function () { return 1; },
   SteamAPI_ISteamApps_BIsSubscribedApp: function () { return 1; },
 
-  SteamAPI_ISteamUser_GetSteamID: function () { return 76561197960265729n; },
+  SteamAPI_ISteamUser_GetSteamID: function () { return 76561197960265728n + BigInt(Module.steamAccount); },
   SteamAPI_ISteamUser_BLoggedOn: function () { return 1; },
+  SteamAPI_ISteamUser_GetVoiceOptimalSampleRate: function () { return 24000; },
+  SteamAPI_ISteamUser_GetAuthSessionTicket: function (self, ticket, capacity, size) {
+    for (let i = 0; i < 4; i++) HEAPU8[(ticket >>> 0) + i] = (Module.steamAccount >>> (8 * i)) & 255;
+    HEAPU32[size >>> 2] = 4;
+    return 1;
+  },
 
   SteamAPI_ISteamFriends_GetPersonaName__deps: ["$steamString"],
-  SteamAPI_ISteamFriends_GetPersonaName: function () { return steamString("Player"); },
+  SteamAPI_ISteamFriends_GetPersonaName: function () { return steamString("Player " + (Module.steamAccount % 10000)); },
 
   SteamAPI_ISteamUtils_GetAppID: function () { return 304930; },
   SteamAPI_ISteamUtils_GetServerRealTime: function () { return Math.floor(Date.now() / 1000); },
