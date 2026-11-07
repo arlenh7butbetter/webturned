@@ -12,14 +12,14 @@ const profile = mkdtempSync(join(tmpdir(), "unturned-chrome-"));
 const display = process.env.PROBE_REAL_GPU
   ? ["--disable-renderer-backgrounding", "--disable-background-timer-throttling", "--disable-backgrounding-occluded-windows", "--no-first-run", "--no-default-browser-check"]
   : ["--headless=new", "--use-angle=swiftshader", "--enable-unsafe-swiftshader", "--ignore-gpu-blocklist"];
-const browser = spawn(chrome, [...display, "--remote-debugging-port=0", "--window-size=1280,720", `--user-data-dir=${profile}`, "about:blank"], { stdio: "ignore" });
+const browser = spawn(chrome, [...display, "--remote-debugging-port=0", `--window-size=${process.env.PROBE_WINDOW ?? "1280,720"}`, `--user-data-dir=${profile}`, "about:blank"], { stdio: "ignore" });
 
 let page;
 for (let i = 0; i < 100 && !page; i++) {
   await new Promise((resolve) => setTimeout(resolve, 200));
   const portFile = join(profile, "DevToolsActivePort");
   const port = existsSync(portFile) ? readFileSync(portFile, "utf8").split("\n")[0].trim() : "";
-  if (port) page = (await (await fetch(`http://127.0.0.1:${port}/json`)).json()).find((target) => target.type === "page");
+  if (port) page = (await (await fetch(`http://127.0.0.1:${port}/json`)).json()).find((target) => target.type === "page" && target.url === "about:blank");
 }
 
 const socket = new WebSocket(page.webSocketDebuggerUrl);
@@ -51,20 +51,102 @@ await send("Runtime.enable");
 await send("Page.enable");
 await send("Page.addScriptToEvaluateOnNewDocument", {
   source: `
+    let callbackTimes = [];
+    const nativeFrame = window.requestAnimationFrame.bind(window);
+    window.requestAnimationFrame = (callback) => nativeFrame((now) => {
+      const began = performance.now();
+      callback(now);
+      callbackTimes.push(performance.now() - began);
+    });
     window.measureFrames = (seconds) => {
-      const gl = document.createElement("canvas").getContext("webgl2");
-      const info = gl.getExtension("WEBGL_debug_renderer_info");
-      const renderer = info ? gl.getParameter(info.UNMASKED_RENDERER_WEBGL) : "unknown";
       const times = [];
       const start = performance.now();
+      callbackTimes = [];
       const tick = (now) => {
         times.push(now);
         if (now - start < seconds * 1000) return requestAnimationFrame(tick);
         const gaps = times.slice(1).map((time, index) => time - times[index]).sort((a, b) => a - b);
         const canvas = document.getElementById("game");
-        console.log("[fps] " + JSON.stringify({ fps: +(1000 * (times.length - 1) / (times[times.length - 1] - times[0])).toFixed(1), medianMs: +gaps[gaps.length >> 1].toFixed(1), worstMs: +gaps[gaps.length - 1].toFixed(1), canvas: [canvas.width, canvas.height], renderer, visible: document.visibilityState }));
+        const busy = [...callbackTimes].sort((a, b) => a - b);
+        console.log("[fps] " + JSON.stringify({ busyP95Ms: +busy[Math.floor(busy.length * 0.95)].toFixed(1), at: Math.round(performance.now() / 1000), fps: +(1000 * (times.length - 1) / (times[times.length - 1] - times[0])).toFixed(1), medianMs: +gaps[gaps.length >> 1].toFixed(1), p95Ms: +gaps[Math.floor(gaps.length * 0.95)].toFixed(1), worstMs: +gaps[gaps.length - 1].toFixed(1), over33ms: gaps.filter((gap) => gap > 33).length, over100ms: gaps.filter((gap) => gap > 100).length, canvas: [canvas.width, canvas.height], heapMB: performance.memory ? Math.round(performance.memory.usedJSHeapSize / 1048576) : null, visible: document.visibilityState }));
       };
       requestAnimationFrame(tick);
+    };
+    window.countGl = (seconds) => {
+      const proto = WebGL2RenderingContext.prototype;
+      const counts = {};
+      const programs = new Map();
+      let current = null;
+      const restore = ["drawElements", "drawArrays", "drawElementsInstanced", "drawArraysInstanced", "useProgram", "bindFramebuffer", "bindTexture", "activeTexture", "uniform4fv", "uniformMatrix4fv", "enable", "disable", "clear", "blitFramebuffer"].map((name) => {
+        const original = proto[name];
+        proto[name] = function (...args) {
+          counts[name] = (counts[name] ?? 0) + 1;
+          if (name === "useProgram") current = args[0];
+          if (name.startsWith("draw")) programs.set(current, (programs.get(current) ?? 0) + 1);
+          return original.apply(this, args);
+        };
+        return () => { proto[name] = original; };
+      });
+      let frames = 0;
+      const start = performance.now();
+      const tick = (now) => {
+        frames++;
+        if (now - start < seconds * 1000) return requestAnimationFrame(tick);
+        restore.forEach((undo) => undo());
+        const perFrame = Object.fromEntries(Object.entries(counts).map(([name, count]) => [name, Math.round(count / frames)]));
+        console.log("[gl] " + JSON.stringify({ frames, perFrame, programs: programs.size, topProgramDraws: [...programs.values()].sort((a, b) => b - a).slice(0, 8).map((count) => Math.round(count / frames)) }));
+      };
+      requestAnimationFrame(tick);
+    };
+    window.captureGlFrame = () => {
+      const proto = WebGL2RenderingContext.prototype;
+      const runs = [];
+      const meshes = new Map();
+      const programs = new Map();
+      let framebuffer = 0;
+      let framebuffers = 0;
+      const ids = new Map();
+      const idOf = (object) => {
+        if (!object) return 0;
+        if (!ids.has(object)) ids.set(object, ids.size + 1);
+        return ids.get(object);
+      };
+      let program = null;
+      const restore = [];
+      const wrap = (name, before) => {
+        const original = proto[name];
+        proto[name] = function (...args) {
+          before.call(this, ...args);
+          return original.apply(this, args);
+        };
+        restore.push(() => { proto[name] = original; });
+      };
+      wrap("useProgram", (next) => { program = next; });
+      wrap("bindFramebuffer", (target, next) => { framebuffer = idOf(next); framebuffers++; });
+      wrap("drawElements", function (mode, count, type, offset) {
+        const key = framebuffer + "/" + idOf(program);
+        const last = runs[runs.length - 1];
+        if (last && last.key === key) last.draws++;
+        else runs.push({ key, draws: 1 });
+        const mesh = idOf(this.getParameter(this.ELEMENT_ARRAY_BUFFER_BINDING)) + ":" + offset + ":" + count;
+        meshes.set(mesh, (meshes.get(mesh) ?? 0) + 1);
+        if (!programs.has(program)) programs.set(program, { draws: 0, indices: 0 });
+        const stats = programs.get(program);
+        stats.draws++;
+        stats.indices += count;
+      });
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        restore.forEach((undo) => undo());
+        const gl = document.getElementById("game").getContext("webgl2");
+        const repeats = {};
+        for (const count of meshes.values()) repeats[count] = (repeats[count] ?? 0) + 1;
+        console.log("[glframe] " + JSON.stringify({ framebuffers, distinctMeshes: meshes.size, meshesByRepeatCount: repeats, runs: runs.slice(0, 120).map((run) => run.key + "x" + run.draws) }));
+        [...programs].sort((a, b) => b[1].draws - a[1].draws).slice(0, 8).forEach(([linked, stats]) => {
+          const shaders = gl.getAttachedShaders(linked).map((shader) => gl.getShaderSource(shader));
+          const defines = shaders.flatMap((source) => source.match(/#define [A-Z_0-9]+( 1)?/g) ?? []);
+          console.log("[glprogram] " + JSON.stringify({ id: idOf(linked), ...stats, defines: [...new Set(defines)].map((line) => line.replace("#define ", "").replace(" 1", "")), head: shaders[1].slice(0, 200) }));
+        });
+      }));
     };
     window.audioStats = { decoded: 0, failed: 0, decodedSeconds: 0, started: 0, peak: 0 };
     const decode = BaseAudioContext.prototype.decodeAudioData;
@@ -91,6 +173,7 @@ await send("Page.navigate", { url: `http://127.0.0.1:${server.address().port}/in
 const clicks = (clickSpec ?? "").split(";").filter(Boolean).map((spec) => {
   const [action, at] = spec.split("@");
   if (action.startsWith("js:")) return { expression: action.slice(3), at: Number(at) };
+  if (action.startsWith("profile:")) return { profile: Number(action.slice(8)), at: Number(at) };
   if (action.startsWith("key:")) {
     const [, code, key, virtualCode, hold] = action.split(":");
     return { keyPress: { code, key, windowsVirtualKeyCode: Number(virtualCode) }, hold: Number(hold), at: Number(at) };
@@ -99,10 +182,38 @@ const clicks = (clickSpec ?? "").split(";").filter(Boolean).map((spec) => {
   return { x, y, at: Number(at) };
 });
 
-async function click({ x, y, keyPress, hold, expression }, index) {
+async function profileFor(seconds) {
+  await send("Profiler.enable");
+  await send("Profiler.setSamplingInterval", { interval: 500 });
+  await send("Profiler.start");
+  await new Promise((resolve) => setTimeout(resolve, seconds * 1000));
+  const result = await send("Profiler.stop");
+  if (!result) {
+    logs.push("[profile] no response");
+    return;
+  }
+  const { nodes, samples, timeDeltas } = result.profile;
+  const names = new Map(nodes.map((node) => [node.id, node.callFrame.functionName || "(anonymous)"]));
+  const self = new Map();
+  let total = 0;
+  samples.forEach((id, index) => {
+    const delta = timeDeltas[index] / 1000;
+    total += delta;
+    self.set(names.get(id), (self.get(names.get(id)) ?? 0) + delta);
+  });
+  const top = [...self].sort((a, b) => b[1] - a[1]).slice(0, 30);
+  logs.push(`[profile] total ${total.toFixed(0)} ms over ${seconds}s\n${top.map(([name, ms]) => `  ${ms.toFixed(0).padStart(7)} ms ${(100 * ms / total).toFixed(1).padStart(5)}%  ${name}`).join("\n")}`);
+}
+
+async function click({ x, y, keyPress, hold, expression, profile }, index) {
+  if (profile) {
+    await profileFor(profile);
+    return;
+  }
   if (expression) {
     await send("Runtime.evaluate", { expression });
     logs.push(`[probe] evaluated ${expression}`);
+    if (process.env.PROBE_NO_SHOTS) return;
     await new Promise((resolve) => setTimeout(resolve, 2000));
     const evalShot = await send("Page.captureScreenshot", { format: "png" });
     if (evalShot) writeFileSync(shotPath.replace(/\.png$/, `-${index}.png`), Buffer.from(evalShot.data, "base64"));
