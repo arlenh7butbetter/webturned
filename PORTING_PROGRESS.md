@@ -21,7 +21,8 @@ Last updated 2026-11-07. Everything under "Verified" was run and checked in head
 | Zombies | 27 to 60 spawn when entering a navigation zone, attack and kill the player |
 | Guns | Maplestrike given by command auto-equips, fires (30 to 24 rounds), kills zombies (27 to 25 alive) |
 | Vehicles | Explorer spawned, entered with F, driven about 100 m, exited with F |
-| Startup download | 392 MB (player and game data), then 12 MB (Tutorial) to 423 MB (Russia) per map |
+| Startup download | About 320 MB (player and game data), then 12 MB (Tutorial) to 423 MB (Russia) per map |
+| Browser memory | Chrome's total private memory, real GPU: 2.2 GB at the menu (was 4.1 GB) and 3.1 GB in PEI (was 5.2 GB) |
 | Walking and terrain collision | Position logged moving about 10 m uphill while W was held |
 | Water draws behind terrain | Screenshots, after keeping depth through `SkyFog` |
 | Inventory dashboard opens with Tab | Screenshot shows inventory, character preview and item with condition |
@@ -50,6 +51,8 @@ Last updated 2026-11-07. Everything under "Verified" was run and checked in head
 - **Steam is simulated offline.** About 55 of 956 native functions are implemented. The rest log their name and return zero, and callbacks never fire, so inventory items, Workshop and matchmaking don't work.
 - **Online requests fail.** Live config, news and matchmaking filters fail in the browser, and the game logs and retries them.
 - **Duplicate sounds.** Clips with the same name, channels, frequency and length share one encoded copy.
+- **Memory is still high for 4 GB Chromebooks.** Unity's own heap is about 1.2 GB in PEI, because Unturned loads every asset's prefab at startup. Getting below that needs assets to load on demand.
+- **Store cosmetics are skipped.** Items marked `Pro` aren't loaded, since they only come from the Steam item store. NPCs that wear them lose those clothes.
 - **Package size.** `game.unturned` is about 1.5 GB with every map. Players only download the part they need.
 - **Plugin modules are unsupported.** `Assembly.Load` can't work under IL2CPP.
 
@@ -67,6 +70,7 @@ Last updated 2026-11-07. Everything under "Verified" was run and checked in head
 - **Patch rules must not stack.** `build/full` is reused between builds, so a rule whose replacement contains its own search text is skipped once applied. Before this, the menu props were loaded once per build. After 9 builds the barn was drawn 9 times with 54 lights, 8,205 draw calls a frame, about 24 FPS and blown-out lighting.
 - **Maps load on demand.** Each map's listing files ship with the game data, so the menu shows every map. `Provider.singleplayer` waits for the map's package group to download before starting, and the previous map's files are freed. Package groups are stored contiguously so each is one range request.
 - **Foliage runs on the main thread.** `FoliageStorageV2` reads one requested tile per frame in `Update` instead of on a worker thread, and `ListExtension` reads `List<T>._items` by reflection because IL2CPP can't run `Reflection.Emit`.
+- **Lower memory settings for Chromebooks.** Textures drop two mip levels, audio decodes at 24 kHz, the canvas renders at CSS pixels, store cosmetics aren't loaded, and the startup copies of the game files are freed once Unity has them.
 - **4 GB WebGL memory limit.** Germany ran out of the default 2 GB while loading.
 - **Saves use IndexedDB.** `/game/Worlds`, `/game/Cloud` and `/game/SteamCloud` are mounted with IDBFS and synced every 20 seconds, on page hide and before Quit reloads.
 
@@ -79,5 +83,6 @@ The repo is private as of 2026-10-31. `src/` and `assets/` stay out of Git regar
 1. Check that a saved game resumes at the same position.
 2. Test item pickup, crafting, death and respawn, then fix what breaks.
 3. Load the remaining maps, Russia first since it's the largest.
-4. Replace `Water_Fallback` with real water if the shipped shaders can be recovered.
-5. After singleplayer is solid, add the WebRTC transport.
+4. Build browser-hosted multiplayer as described in `docs/MULTIPLAYER.md`.
+5. Load assets on demand to bring memory down further.
+6. Replace `Water_Fallback` with real water if the shipped shaders can be recovered.
