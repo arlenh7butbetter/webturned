@@ -1,5 +1,5 @@
 param(
-    [ValidateSet("build", "clean", "test", "run", "compile", "slice")]
+    [ValidateSet("build", "clean", "test", "run", "signal", "compile", "slice")]
     [string]$Command = "build",
     [string[]]$Maps,
     [int]$Port = 8080,
@@ -221,5 +221,8 @@ switch ($Command) {
     }
     "run" {
         Invoke-Checked "Server" { node (Join-Path $root "tools\serve.mjs") $dist $Port }
+    }
+    "signal" {
+        Invoke-Checked "Signaling" { node (Join-Path $root "networking\signal.mjs") $Port }
     }
 }
