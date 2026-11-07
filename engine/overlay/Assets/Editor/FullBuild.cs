@@ -70,6 +70,12 @@ public static class FullBuild
 
         IncludeBundleShaders();
 
+        for (var level = 0; level < QualitySettings.names.Length; level++)
+        {
+            QualitySettings.SetQualityLevel(level, false);
+            QualitySettings.globalTextureMipmapLimit = 2;
+        }
+
         PlayerSettings.SetUseDefaultGraphicsAPIs(BuildTarget.WebGL, false);
         PlayerSettings.SetGraphicsAPIs(BuildTarget.WebGL, new[] { GraphicsDeviceType.OpenGLES3 });
         PlayerSettings.WebGL.compressionFormat = WebGLCompressionFormat.Disabled;
