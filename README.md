@@ -15,12 +15,12 @@ Working:
 - Walking, terrain, trees, buildings and water
 - The inventory screen
 - Sound, including the ambient loops
+- Saving, into the browser's own storage, so clearing site data deletes your worlds
 - Quitting, which reloads the page since a browser tab can't really exit
 
 Not working yet, or not tested:
 
 - **Zombies, combat, picking up items, crafting and vehicles** haven't been tested yet.
-- **Saves** don't survive a page reload. The game's files live in memory.
 - **Only PEI is packaged.** The other maps need their bundles converted and on-demand loading.
 - **Steam stuff** is faked offline, so Workshop, the item store and matchmaking don't do anything.
 - **Multiplayer** doesn't exist yet. The plan is browser-hosted games over WebRTC, once singleplayer is solid.

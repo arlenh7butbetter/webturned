@@ -1,6 +1,6 @@
 # Porting Progress
 
-Last updated 2026-10-31. Everything under "Verified" was run and checked, using headless Chrome with software rendering unless stated otherwise. **The original game runs in a browser and you can walk around PEI. It isn't complete.**
+Last updated 2026-11-06. Everything under "Verified" was run and checked, using headless Chrome with software rendering unless stated otherwise. **The original game runs in a browser and you can walk around PEI. It isn't complete.**
 
 ## Verified
 
@@ -13,12 +13,14 @@ Last updated 2026-10-31. Everything under "Verified" was run and checked, using 
 | Original startup, UI, fonts, localization | Game log and screenshots |
 | `core.masterbundle` converted for WebGL | 5,360 textures inlined, 1,389 audio clips replaced, 103,554 objects verified by the converter |
 | Real barn main menu | Screenshot, log shows 258 menu renderers |
+| Main menu frame rate on a real GPU | RTX 4060 Laptop, 1925x1105 canvas: 144 FPS (display limit), about 2-3 ms of game work per frame, 239 draw calls |
 | Singleplayer on PEI loads | Game log, screenshots of terrain, trees, buildings, water, wheat fields, bridge |
 | Walking and terrain collision | Position logged moving about 10 m uphill while W was held |
 | Water draws behind terrain | Screenshots, after keeping depth through `SkyFog` |
 | Inventory dashboard opens with Tab | Screenshot shows inventory, character preview and item with condition |
 | Audio decodes and plays | Browser API counters: 156 clips decoded, 0 failed, 73 started, non-silent samples |
 | Quit reloads the page without crashing | Exit, Quit, confirm: page restarted, no memory error |
+| Save files survive a reload | Files under `/game/Worlds` were still there after the page reloaded |
 | Long session stability | About 2 minutes in PEI with varied input, no game errors |
 | Live site over HTTPS loading from a CDN | Reached the loading screen on `unturned.arlenh7.com` in a real browser pane |
 
@@ -26,18 +28,19 @@ Last updated 2026-10-31. Everything under "Verified" was run and checked, using 
 
 - **Hearing it.** Decoding and playback are measured, but nobody has confirmed how it sounds.
 - **Mouse look.** The test browsers reject pointer lock, so it needs a normal browser window.
-- **Real GPU performance.** Frame rate and memory on real hardware are unmeasured.
+- **In-game performance on a real GPU.** Only the main menu has been measured.
+- **Resuming a save in place.** The files persist, but loading back at the same position hasn't been checked.
 - **Zombies, combat, picking up items, crafting, vehicles.** No test has exercised them yet.
 - **In-game Exit back to the menu.** Only quitting from the main menu has been tested.
 - **The `BundleTool` patch.** This editor menu tool compiles but has not been run.
 
 ## Known problems
 
-- **Saves are lost on reload.** The game's files live in memory.
 - **Only PEI is packaged.** Other maps need converting and on-demand loading, since they total about 1.4 GB.
 - **Foliage thread.** `FoliageStorageV2` still starts a `Thread`, so grass and foliage may be missing.
 - **Water is flat gray.** It uses the SDK's `Water_Fallback` shader.
-- **Menu visual glitch.** Bright stray patches appear at the left and bottom-left of the barn menu.
+- **Menu visual glitch.** Bright patches at the left and bottom-left of the barn menu. The barn itself is no longer overexposed, but these haven't been checked against the original game.
+- **Intermittent freeze on a real GPU.** Before the menu fix, the page stopped responding a few times after 20 seconds to 2.5 minutes. It hasn't been reproduced since, but the runs have been short.
 - **Steam is simulated offline.** About 55 of 956 native functions are implemented. The rest log their name and return zero, and callbacks never fire, so inventory items, Workshop and matchmaking don't work.
 - **Online requests fail.** Live config, news and matchmaking filters fail in the browser, and the game logs and retries them.
 - **Duplicate sounds.** Clips with the same name, channels, frequency and length share one encoded copy.
@@ -55,6 +58,8 @@ Last updated 2026-10-31. Everything under "Verified" was run and checked, using 
 - **Audio re-encoded by Unity.** Clips are decoded in the editor from a temporary copy and encoded for WebGL, then spliced in.
 - **Worker thread pool jobs run on the main thread.** They finish on their own, and WebGL has no threads. This can block the page for a few seconds while loading.
 - **Quit reloads the page**, because shutting the engine down left its main loop running on freed memory.
+- **Patch rules must not stack.** `build/full` is reused between builds, so a rule whose replacement contains its own search text is skipped once applied. Before this, the menu props were loaded once per build. After 9 builds the barn was drawn 9 times with 54 lights, 8,205 draw calls a frame, about 24 FPS and blown-out lighting.
+- **Saves use IndexedDB.** `/game/Worlds`, `/game/Cloud` and `/game/SteamCloud` are mounted with IDBFS and synced every 20 seconds, on page hide and before Quit reloads.
 
 ## Licensing
 
@@ -62,7 +67,7 @@ The repo is private as of 2026-10-31. `src/` and `assets/` stay out of Git regar
 
 ## Next steps
 
-1. Keep saves across reloads with browser storage.
+1. Check that a saved game resumes at the same position.
 2. Test zombies, combat, items and crafting, then fix what breaks.
 3. Replace the foliage thread.
 4. Convert the other 9 maps and load them on demand.
