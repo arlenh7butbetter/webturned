@@ -28,16 +28,21 @@ public static class ConvertAssets
         {
             var directory = Path.Combine(output, "Maps", map);
             Directory.CreateDirectory(directory);
+            if (!Directory.Exists(Path.Combine(assets, "Maps", map, "Landscape")))
+                continue;
             var manifest = new StringBuilder();
             foreach (var (tile, guids) in ReadTiles(Path.Combine(assets, "Maps", map, "Level.hierarchy")))
             {
                 manifest.Append(tile);
                 foreach (var guid in guids)
                 {
+                    manifest.Append('\t');
+                    if (guid == "00000000000000000000000000000000")
+                        continue;
                     if (!textures.TryGetValue(guid, out var path))
                         throw new InvalidDataException($"{map} tile {tile} uses unknown material {guid}");
                     Export(bundle, path, Path.Combine(output, "Textures"));
-                    manifest.Append('\t').Append(path);
+                    manifest.Append(path);
                 }
                 manifest.Append('\n');
             }

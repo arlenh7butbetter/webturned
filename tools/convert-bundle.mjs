@@ -41,7 +41,7 @@ function writeBundle(path, nodes) {
   const signature = Buffer.from("UnityFS\0");
   const versions = Buffer.from(`${bundle.header.playerVersion}\0${bundle.header.engineVersion}\0`);
   const fields = Buffer.alloc(4 + versions.length + 8 + 12);
-  fields.writeUInt32BE(bundle.header.version, 0);
+  fields.writeUInt32BE(Math.max(bundle.header.version, 7), 0);
   versions.copy(fields, 4);
   const fieldsAt = 4 + versions.length;
   let headerSize = signature.length + fields.length;
