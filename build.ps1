@@ -150,7 +150,7 @@ function Build-Package([string]$playerName, [string]$output, [switch]$FullData) 
             robocopy (Join-Path $buildDir "converted\MapBundles\$map") $mapFiles /E /NFL /NDL /NJH /NJS /NP | Out-Null
             if ($LASTEXITCODE -ge 8) { throw "Copying converted bundles for $map failed with exit code $LASTEXITCODE" }
             New-Item -ItemType Directory -Force (Join-Path $mapInfo $map) | Out-Null
-            Get-ChildItem $mapFiles -File | Where-Object { $_.Extension -eq ".dat" -or $_.Name -in "Config.json", "Icon.png", "Preview.png", "Level.png" } | Move-Item -Destination (Join-Path $mapInfo $map)
+            Get-ChildItem $mapFiles -File | Where-Object { $_.Extension -eq ".dat" -or $_.Name -in "Config.json", "Icon.png", "Preview.png" } | Move-Item -Destination (Join-Path $mapInfo $map)
             $groups += "map/$map=$mapFiles@game/Maps/$map"
         } else {
             foreach ($part in "Landscape", "Spawns") {
