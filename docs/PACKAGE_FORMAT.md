@@ -47,6 +47,8 @@ UTF-8 JSON, compressed with raw DEFLATE:
 | `method` | `deflate` (raw DEFLATE) or `store` |
 | `sha256` | Digest of the decompressed bytes |
 
+All entries of a group are stored next to each other, so a reader can fetch a whole group with one range request.
+
 ## Reader requirements
 
 A reader must reject a file when any of these fail:

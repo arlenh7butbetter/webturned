@@ -22,7 +22,7 @@ using (var output = new FileStream(outputPath, FileMode.Create, FileAccess.ReadW
 {
     output.Write(new byte[64]);
 
-    foreach (var spec in args.Skip(1))
+    foreach (var spec in args.Skip(1).OrderBy(spec => spec[..spec.IndexOf('=')], StringComparer.Ordinal))
     {
         var eq = spec.IndexOf('=');
         var at = spec.IndexOf('@', eq);
