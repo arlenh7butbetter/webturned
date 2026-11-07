@@ -1,6 +1,11 @@
 const canvas = document.getElementById("game");
 const statusLine = document.getElementById("status");
 
+const requestPointerLock = canvas.requestPointerLock;
+canvas.requestPointerLock = function (options) {
+  return requestPointerLock.call(this, options)?.catch((error) => console.warn(`Pointer lock was not granted: ${error.message}`));
+};
+
 function blobUrl(data, type) {
   return URL.createObjectURL(new Blob([data], { type }));
 }
