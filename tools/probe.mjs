@@ -49,6 +49,7 @@ function send(method, params = {}) {
 
 await send("Runtime.enable");
 await send("Page.enable");
+if (process.env.PROBE_SIGNAL) await send("Page.addScriptToEvaluateOnNewDocument", { source: `window.unturnedSignalUrl = ${JSON.stringify(process.env.PROBE_SIGNAL)};` });
 await send("Page.addScriptToEvaluateOnNewDocument", {
   source: `
     const memory = { textures: new Map(), wasm: null, audio: 0 };
@@ -243,6 +244,11 @@ const clicks = (clickSpec ?? "").split(";").filter(Boolean).map((spec) => {
   if (action.startsWith("js:")) return { expression: action.slice(3), at: Number(at) };
   if (action.startsWith("profile:")) return { profile: Number(action.slice(8)), at: Number(at) };
   if (action === "snapshot") return { snapshot: true, at: Number(at) };
+  if (action.startsWith("text:")) return { text: action.slice(5), at: Number(at) };
+  if (action.startsWith("wheel:")) {
+    const [x, y, deltaY] = action.slice(6).split(",").map(Number);
+    return { wheel: { x, y, deltaY }, at: Number(at) };
+  }
   if (action.startsWith("key:")) {
     const [, code, key, virtualCode, hold] = action.split(":");
     return { keyPress: { code, key, windowsVirtualKeyCode: Number(virtualCode) }, hold: Number(hold), at: Number(at) };
@@ -288,7 +294,24 @@ async function takeSnapshot(index) {
   logs.push(`[probe] heap snapshot ${index} written`);
 }
 
-async function click({ x, y, keyPress, hold, expression, profile, snapshot }, index) {
+async function click({ x, y, keyPress, hold, expression, profile, snapshot, text, wheel }, index) {
+  if (wheel) {
+    await send("Input.dispatchMouseEvent", { type: "mouseWheel", x: wheel.x, y: wheel.y, deltaX: 0, deltaY: wheel.deltaY });
+    logs.push(`[probe] scrolled ${wheel.deltaY}`);
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+    const wheelShot = await send("Page.captureScreenshot", { format: "png" });
+    if (wheelShot) writeFileSync(shotPath.replace(/\.png$/, `-${index}.png`), Buffer.from(wheelShot.data, "base64"));
+    return;
+  }
+  if (text) {
+    for (const character of text) {
+      const key = { key: character, text: character, code: /\d/.test(character) ? `Digit${character}` : `Key${character.toUpperCase()}`, windowsVirtualKeyCode: character.toUpperCase().charCodeAt(0) };
+      await send("Input.dispatchKeyEvent", { type: "keyDown", ...key });
+      await send("Input.dispatchKeyEvent", { type: "keyUp", ...key });
+    }
+    logs.push(`[probe] typed ${text}`);
+    return;
+  }
   if (snapshot) {
     await takeSnapshot(index);
     return;
