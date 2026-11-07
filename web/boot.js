@@ -45,10 +45,13 @@ async function boot() {
   const mapFiles = map ? await readGroup(pkg, `map/${map}`, map) : [];
 
   statusLine.textContent = "Loading player";
-  const instance = await createUnityInstance(canvas, {
+  const player = {
     dataUrl: blobUrl(await pkg.read("player/game.data"), "application/octet-stream"),
     frameworkUrl: blobUrl(await pkg.read("player/game.framework.js"), "text/javascript"),
     codeUrl: blobUrl(await pkg.read("player/game.wasm"), "application/wasm"),
+  };
+  const instance = await createUnityInstance(canvas, {
+    ...player,
     companyName: "unturned-web-port",
     productName: "Webturned",
     productVersion: pkg.build,
@@ -66,6 +69,7 @@ async function boot() {
     statusLine.textContent = `Starting ${Math.round(progress * 100)}%`;
   });
 
+  for (const url of Object.values(player)) URL.revokeObjectURL(url);
   statusLine.hidden = true;
   window.unturned = instance;
 }

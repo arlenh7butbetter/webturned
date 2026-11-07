@@ -9,5 +9,5 @@ Module.preRun.push(function () {
     FS.createPath("/", file.path.slice(0, slash), true, true);
     FS.writeFile(file.path, file.data);
   }
-  Module.unturnedFiles = null;
+  Module.unturnedFiles.length = 0;
 });
