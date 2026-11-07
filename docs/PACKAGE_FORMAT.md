@@ -41,7 +41,7 @@ UTF-8 JSON, compressed with raw DEFLATE:
 | Field | Meaning |
 |---|---|
 | `path` | Forward-slash path, unique, case-sensitive, no `..` segments |
-| `group` | Load unit: `player`, `game`, or `map/<name>` |
+| `group` | Load unit: `player`, `game`, or `map/<name>`. `player` and `game` load at startup, and a map group loads when that map is played |
 | `offset`, `stored` | Byte range of the entry in the file |
 | `size` | Decompressed length |
 | `method` | `deflate` (raw DEFLATE) or `store` |

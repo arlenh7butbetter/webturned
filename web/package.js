@@ -54,6 +54,10 @@ export async function openPackage(url) {
     span = { start, end, bytes: await readRange(url, start, end, whole) };
   }
 
+  function release() {
+    span = null;
+  }
+
   async function read(path) {
     const entry = entries.get(path);
     if (!entry) throw new Error(`Package has no entry ${path}`);
@@ -66,5 +70,5 @@ export async function openPackage(url) {
     return data;
   }
 
-  return { build: manifest.build, entries, preload, read };
+  return { build: manifest.build, entries, preload, release, read };
 }

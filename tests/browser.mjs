@@ -107,7 +107,7 @@ async function key(type, code, keyName, virtualCode) {
 try {
   await send("Runtime.enable");
   await send("Page.enable");
-  await send("Page.navigate", { url: `http://127.0.0.1:${server.address().port}/index.html` });
+  await send("Page.navigate", { url: `http://127.0.0.1:${server.address().port}/index.html?map=PEI` });
 
   const ready = await waitForLog(/\[slice\] map=/, 240000);
   console.log(ready);

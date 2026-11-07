@@ -1,7 +1,7 @@
 param(
     [ValidateSet("build", "clean", "test", "run", "compile", "slice")]
     [string]$Command = "build",
-    [string[]]$Maps = @("PEI"),
+    [string[]]$Maps,
     [int]$Port = 8080,
     [switch]$PackageOnly
 )
@@ -139,6 +139,8 @@ function Build-Package([string]$playerName, [string]$output, [switch]$FullData) 
     Copy-Item (Join-Path $player "$playerName.wasm") (Join-Path $staging "game.wasm")
 
     $groups = @("player=$staging@player", "game=$(Join-Path $buildDir "converted\Textures")@game/Textures")
+    $mapInfo = Join-Path $buildDir "package\MapInfo"
+    Remove-Item $mapInfo -Recurse -Force -ErrorAction SilentlyContinue
     foreach ($map in $Maps) {
         $groups += "map/$map=$(Join-Path $buildDir "converted\Maps\$map")@game/Maps/$map/Converted"
         if ($FullData) {
@@ -147,6 +149,8 @@ function Build-Package([string]$playerName, [string]$output, [switch]$FullData) 
             if ($LASTEXITCODE -ge 8) { throw "Copying map $map failed with exit code $LASTEXITCODE" }
             robocopy (Join-Path $buildDir "converted\MapBundles\$map") $mapFiles /E /NFL /NDL /NJH /NJS /NP | Out-Null
             if ($LASTEXITCODE -ge 8) { throw "Copying converted bundles for $map failed with exit code $LASTEXITCODE" }
+            New-Item -ItemType Directory -Force (Join-Path $mapInfo $map) | Out-Null
+            Get-ChildItem $mapFiles -File | Where-Object { $_.Extension -eq ".dat" -or $_.Name -in "Config.json", "Icon.png", "Preview.png", "Level.png" } | Move-Item -Destination (Join-Path $mapInfo $map)
             $groups += "map/$map=$mapFiles@game/Maps/$map"
         } else {
             foreach ($part in "Landscape", "Spawns") {
@@ -163,7 +167,7 @@ function Build-Package([string]$playerName, [string]$output, [switch]$FullData) 
         if ($LASTEXITCODE -ge 8) { throw "Copying bundles failed with exit code $LASTEXITCODE" }
         Copy-Item (Join-Path $buildDir "converted\Bundles\core.masterbundle") $bundles
         Invoke-Checked "Menu scene" { node --max-old-space-size=4096 (Join-Path $root "tools\convert-scene.mjs") (Join-Path $root "assets\Unturned_Data") (Join-Path $buildDir "converted\Bundles\core.masterbundle") level8 (Join-Path $bundles "Menu_Base.bundle") }
-        $groups += "game=$bundles@game/Bundles"
+        $groups += "game=$bundles@game/Bundles", "game=$mapInfo@game/Maps"
         $rootFiles = Join-Path $buildDir "package\root"
         Remove-Item $rootFiles -Recurse -Force -ErrorAction SilentlyContinue
         New-Item -ItemType Directory -Force $rootFiles | Out-Null
@@ -193,6 +197,7 @@ switch ($Command) {
         Build-Game "FullBuild.CompilePlayer" "compile"
     }
     "build" {
+        if (-not $Maps) { $Maps = (Get-ChildItem (Join-Path $root "assets\Maps") -Directory).Name }
         if (-not $PackageOnly) {
             if (-not (Test-Path (Join-Path $buildDir "full\Assets\TextMesh Pro\Resources\TMP Settings.asset"))) {
                 Build-Game "FullBuild.WaitForImport" "import" -StayOpen
@@ -203,6 +208,7 @@ switch ($Command) {
         Build-Package "game-player" $dist -FullData
     }
     "slice" {
+        if (-not $Maps) { $Maps = @("PEI") }
         if (-not $PackageOnly) {
             Build-Player
             Convert-Assets
